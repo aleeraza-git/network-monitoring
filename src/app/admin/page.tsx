@@ -1,648 +1,325 @@
-'use client'
+﻿'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import type { Site, SiteStatus } from '@/lib/store'
 
-function LiveClock() {
-  const [now, setNow] = useState(new Date())
-  useEffect(() => { const iv = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(iv) }, [])
-  const p = (n: number) => String(n).padStart(2, '0')
+function Clock() {
+  const [t, setT] = useState('')
+  useEffect(function() {
+    function tick() {
+      const n = new Date(), p = function(x: number) { return String(x).padStart(2,'0') }
+      const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'], months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+      setT(days[n.getDay()] + ' ' + n.getDate() + ' ' + months[n.getMonth()] + ' ' + p(n.getHours()) + ':' + p(n.getMinutes()) + ':' + p(n.getSeconds()))
+    }
+    tick(); const iv = setInterval(tick, 1000); return function() { clearInterval(iv) }
+  }, [])
+  return <span className="mono" style={{ fontSize: '0.72rem', color: 'var(--text3)' }}>{t}</span>
+}
+
+function SBadge({ status }: { status: SiteStatus }) {
+  const label = status === 'online' ? 'Online' : status === 'degraded' ? 'Degraded' : 'Down'
   return (
-    <span className="font-mono" style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
-      {p(now.getHours())}:{p(now.getMinutes())}:{p(now.getSeconds())} &nbsp;
-      {now.toLocaleDateString('en-PK', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
+    <span className={'status-' + status + ' inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg mono'} style={{ fontSize: '0.68rem', fontWeight: 700 }}>
+      <span style={{ width: 5, height: 5, borderRadius: '50%', background: status === 'online' ? 'var(--green)' : status === 'degraded' ? 'var(--amber)' : 'var(--red)', display: 'inline-block', flexShrink: 0 }} />
+      {label}
     </span>
   )
 }
 
-function StatusBadge({ status }: { status: SiteStatus }) {
-  const m: Record<SiteStatus, { label: string; cls: string }> = {
-    online:   { label: 'Online',   cls: 'badge-online' },
-    degraded: { label: 'Degraded', cls: 'badge-degraded' },
-    down:     { label: 'Down',     cls: 'badge-down' },
-  }
-  const s = m[status]
-  return (
-    <span className={`${s.cls} inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md font-mono`}
-      style={{ fontSize: '0.68rem', fontWeight: 600 }}>
-      <span className="w-1.5 h-1.5 rounded-full"
-        style={{ background: status === 'online' ? '#10b981' : status === 'degraded' ? '#f59e0b' : '#ef4444' }} />
-      {s.label}
-    </span>
-  )
-}
-
-/* ─── Edit modal ─────────────────────────────────────────────────── */
-function EditModal({ site, onClose, onSave }: {
-  site: Site; onClose: () => void
-  onSave: (id: string, patch: Partial<Site>) => Promise<void>
-}) {
+function EditModal({ site, onClose, onSave }: { site: Site; onClose: () => void; onSave: (id: string, p: Partial<Site>) => Promise<void> }) {
   const [name, setName] = useState(site.name)
   const [status, setStatus] = useState<SiteStatus>(site.status)
-  const [ping, setPing] = useState(site.pingMs?.toString() ?? '')
+  const [ping, setPing] = useState(site.pingMs ? String(site.pingMs) : '')
   const [uptime, setUptime] = useState(site.uptime24h.toFixed(2))
-  const [location, setLocation] = useState(site.location ?? '')
-  const [notes, setNotes] = useState(site.notes ?? '')
+  const [location, setLocation] = useState(site.location || '')
+  const [notes, setNotes] = useState(site.notes || '')
   const [saving, setSaving] = useState(false)
-
-  const handleSave = async () => {
+  async function save() {
     setSaving(true)
     const patch: Partial<Site> = { name: name.trim(), status, location, notes }
     if (status === 'down') { patch.pingMs = null; patch.uptime24h = 0 }
-    else {
-      if (ping !== '') patch.pingMs = parseInt(ping) || null
-      if (uptime !== '') patch.uptime24h = Math.min(100, Math.max(0, parseFloat(uptime)))
-    }
-    await onSave(site.id, patch)
-    setSaving(false); onClose()
+    else { if (ping) patch.pingMs = parseInt(ping) || null; if (uptime) patch.uptime24h = Math.min(100, Math.max(0, parseFloat(uptime))) }
+    await onSave(site.id, patch); setSaving(false); onClose()
   }
-
-  const inputCls = "input-field w-full px-3.5 py-2.5 rounded-xl"
-  const labelCls = "font-mono block mb-2"
-  const labelStyle = { fontSize: '0.62rem', color: 'var(--text-tertiary)', textTransform: 'uppercase' as const, letterSpacing: '0.1em' }
-
-  const statusOptions: { value: SiteStatus; label: string; color: string; bg: string; border: string }[] = [
-    { value: 'online',   label: '↑ Online',   color: '#34d399', bg: 'rgba(16,185,129,0.1)', border: 'rgba(16,185,129,0.35)' },
-    { value: 'degraded', label: '~ Degraded', color: '#fbbf24', bg: 'rgba(245,158,11,0.1)', border: 'rgba(245,158,11,0.35)' },
-    { value: 'down',     label: '↓ Down',     color: '#f87171', bg: 'rgba(239,68,68,0.1)',  border: 'rgba(239,68,68,0.35)' },
-  ]
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-backdrop"
-      onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="w-full max-w-md rounded-2xl p-6 animate-slideInR"
-        style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-med)',
-          boxShadow: '0 24px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(0,212,255,0.08)' }}>
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h2 style={{ fontFamily: 'Geist,sans-serif', fontWeight: 700, fontSize: '1rem', letterSpacing: '-0.02em' }}>
-              Edit Site
-            </h2>
-            <p className="font-mono mt-0.5" style={{ fontSize: '0.65rem', color: 'var(--text-tertiary)' }}>
-              {site.id}
-            </p>
-          </div>
-          <button onClick={onClose} className="btn-ghost w-8 h-8 rounded-lg flex items-center justify-center"
-            style={{ fontSize: '0.9rem', cursor: 'pointer' }}>✕</button>
-        </div>
-
-        <div className="flex flex-col gap-4">
-          {/* Site name */}
-          <div>
-            <label className={labelCls} style={labelStyle}>Site Name</label>
-            <input value={name} onChange={e => setName(e.target.value)} className={inputCls} style={{ fontSize: '0.88rem' }} />
-          </div>
-
-          {/* Status selector */}
-          <div>
-            <label className={labelCls} style={labelStyle}>Status</label>
-            <div className="grid grid-cols-3 gap-2">
-              {statusOptions.map(opt => (
-                <button key={opt.value} onClick={() => setStatus(opt.value)}
-                  className="py-2.5 rounded-xl font-mono transition-all cursor-pointer"
-                  style={{ fontSize: '0.75rem', fontWeight: 700,
-                    background: status === opt.value ? opt.bg : 'rgba(255,255,255,0.03)',
-                    border: `1px solid ${status === opt.value ? opt.border : 'var(--border-dim)'}`,
-                    color: status === opt.value ? opt.color : 'var(--text-tertiary)',
-                    boxShadow: status === opt.value ? `0 0 16px ${opt.bg}` : 'none' }}>
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Ping + Uptime */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className={labelCls} style={{ ...labelStyle, opacity: status === 'down' ? 0.4 : 1 }}>
-                Ping (ms)
-              </label>
-              <input type="number" value={status === 'down' ? '' : ping}
-                onChange={e => setPing(e.target.value)} disabled={status === 'down'}
-                placeholder="e.g. 14" className={inputCls}
-                style={{ fontSize: '0.88rem', fontFamily: 'JetBrains Mono,monospace', opacity: status === 'down' ? 0.4 : 1 }} />
-            </div>
-            <div>
-              <label className={labelCls} style={{ ...labelStyle, opacity: status === 'down' ? 0.4 : 1 }}>
-                Uptime (%)
-              </label>
-              <input type="number" min={0} max={100} step={0.01}
-                value={status === 'down' ? '0' : uptime}
-                onChange={e => setUptime(e.target.value)} disabled={status === 'down'}
-                className={inputCls}
-                style={{ fontSize: '0.88rem', fontFamily: 'JetBrains Mono,monospace', opacity: status === 'down' ? 0.4 : 1 }} />
-            </div>
-          </div>
-
-          {/* Location */}
-          <div>
-            <label className={labelCls} style={labelStyle}>Location</label>
-            <input value={location} onChange={e => setLocation(e.target.value)}
-              placeholder="e.g. Islamabad, Sector G-11" className={inputCls} style={{ fontSize: '0.88rem' }} />
-          </div>
-
-          {/* Notes */}
-          <div>
-            <label className={labelCls} style={labelStyle}>Internal Notes</label>
-            <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
-              placeholder="Admin-only notes (not shown publicly)"
-              className={inputCls} style={{ fontSize: '0.84rem', resize: 'none' }} />
-          </div>
-        </div>
-
-        <div className="flex gap-3 mt-6">
-          <button onClick={onClose} className="btn-ghost flex-1 py-2.5 rounded-xl cursor-pointer"
-            style={{ fontSize: '0.84rem', fontFamily: 'Geist,sans-serif' }}>Cancel</button>
-          <button onClick={handleSave} disabled={saving}
-            className="btn-primary flex-1 py-2.5 rounded-xl cursor-pointer"
-            style={{ fontSize: '0.88rem', fontFamily: 'Geist,sans-serif', opacity: saving ? 0.7 : 1 }}>
-            {saving ? (
-              <span className="flex items-center justify-center gap-2">
-                <span className="w-3.5 h-3.5 rounded-full animate-spin-fast"
-                  style={{ border: '2px solid rgba(0,0,0,0.2)', borderTopColor: 'rgba(0,0,0,0.8)' }} />
-                Saving…
-              </span>
-            ) : 'Save Changes'}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-/* ─── Add Site modal ─────────────────────────────────────────────── */
-function AddModal({ onClose, onAdd }: {
-  onClose: () => void
-  onAdd: (data: { name: string; location?: string; notes?: string }) => Promise<void>
-}) {
-  const [name, setName] = useState('')
-  const [location, setLocation] = useState('')
-  const [notes, setNotes] = useState('')
-  const [saving, setSaving] = useState(false)
-
-  const handleAdd = async () => {
-    if (!name.trim()) return
-    setSaving(true)
-    await onAdd({ name: name.trim(), location, notes })
-    setSaving(false); onClose()
-  }
-
-  const inputCls = "input-field w-full px-3.5 py-2.5 rounded-xl"
-  const labelStyle = { fontSize: '0.62rem', color: 'var(--text-tertiary)', textTransform: 'uppercase' as const, letterSpacing: '0.1em' }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-backdrop"
-      onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="w-full max-w-sm rounded-2xl p-6 animate-slideInR"
-        style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-med)',
-          boxShadow: '0 24px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(0,255,136,0.06)' }}>
-        <div className="flex items-center justify-between mb-5">
-          <h2 style={{ fontFamily: 'Geist,sans-serif', fontWeight: 700, fontSize: '1rem', letterSpacing: '-0.02em' }}>
-            Add New Site
-          </h2>
-          <button onClick={onClose} className="btn-ghost w-8 h-8 rounded-lg flex items-center justify-center"
-            style={{ fontSize: '0.9rem', cursor: 'pointer' }}>✕</button>
-        </div>
-        <div className="flex flex-col gap-4">
-          <div>
-            <label className="font-mono block mb-2" style={labelStyle}>Site Name *</label>
-            <input value={name} onChange={e => setName(e.target.value)}
-              placeholder="e.g. New Branch Office" className={inputCls} style={{ fontSize: '0.88rem' }} />
-          </div>
-          <div>
-            <label className="font-mono block mb-2" style={labelStyle}>Location</label>
-            <input value={location} onChange={e => setLocation(e.target.value)}
-              placeholder="e.g. Islamabad" className={inputCls} style={{ fontSize: '0.88rem' }} />
-          </div>
-          <div>
-            <label className="font-mono block mb-2" style={labelStyle}>Notes</label>
-            <textarea value={notes} onChange={e => setNotes(e.target.value)}
-              rows={2} className={inputCls} style={{ fontSize: '0.84rem', resize: 'none' }} />
-          </div>
-        </div>
-        <div className="flex gap-3 mt-5">
-          <button onClick={onClose} className="btn-ghost flex-1 py-2.5 rounded-xl cursor-pointer"
-            style={{ fontSize: '0.84rem' }}>Cancel</button>
-          <button onClick={handleAdd} disabled={saving || !name.trim()}
-            className="btn-success flex-1 py-2.5 rounded-xl cursor-pointer font-mono"
-            style={{ fontSize: '0.84rem', opacity: !name.trim() ? 0.5 : 1, fontWeight: 700 }}>
-            {saving ? 'Adding…' : '+ Add Site'}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-/* ─── Confirm delete ─────────────────────────────────────────────── */
-function ConfirmDelete({ site, onClose, onConfirm }: { site: Site; onClose: () => void; onConfirm: () => void }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-backdrop">
-      <div className="w-full max-w-sm rounded-2xl p-6 animate-slideInR"
-        style={{ background: 'var(--bg-elevated)', border: '1px solid rgba(239,68,68,0.25)',
-          boxShadow: '0 24px 80px rgba(0,0,0,0.6)' }}>
-        <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-4"
-          style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)' }}>
-          <span style={{ fontSize: '1.3rem' }}>⚠</span>
-        </div>
-        <h3 style={{ fontFamily: 'Geist,sans-serif', fontWeight: 700, fontSize: '1rem', marginBottom: 8 }}>
-          Delete Site
-        </h3>
-        <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: 20, lineHeight: 1.65 }}>
-          Remove <strong style={{ color: 'var(--text-primary)' }}>{site.name}</strong> from the
-          network monitor? All associated data will be lost.
-        </p>
-        <div className="flex gap-3">
-          <button onClick={onClose} className="btn-ghost flex-1 py-2.5 rounded-xl cursor-pointer"
-            style={{ fontSize: '0.84rem' }}>Cancel</button>
-          <button onClick={onConfirm} className="btn-danger flex-1 py-2.5 rounded-xl cursor-pointer"
-            style={{ fontSize: '0.84rem', fontWeight: 600 }}>Delete</button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-/* ─── Bulk modal ─────────────────────────────────────────────────── */
-function BulkModal({ count, onClose, onBulk }: {
-  count: number; onClose: () => void
-  onBulk: (s: SiteStatus) => void
-}) {
-  const opts: { value: SiteStatus; label: string; color: string; bg: string; border: string }[] = [
-    { value: 'online',   label: '↑ Set Online',   color: '#34d399', bg: 'rgba(16,185,129,0.1)',  border: 'rgba(16,185,129,0.35)' },
-    { value: 'degraded', label: '~ Set Degraded', color: '#fbbf24', bg: 'rgba(245,158,11,0.1)',  border: 'rgba(245,158,11,0.35)' },
-    { value: 'down',     label: '↓ Set Down',     color: '#f87171', bg: 'rgba(239,68,68,0.1)',   border: 'rgba(239,68,68,0.35)' },
+  const sOpts: { v: SiteStatus; label: string; color: string; bg: string; border: string }[] = [
+    { v: 'online',   label: 'Online',   color: 'var(--green)', bg: 'var(--green2)', border: 'var(--green3)' },
+    { v: 'degraded', label: 'Degraded', color: 'var(--amber)', bg: 'var(--amber2)', border: 'var(--amber3)' },
+    { v: 'down',     label: 'Down',     color: 'var(--red)',   bg: 'var(--red2)',   border: 'var(--red3)' },
   ]
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-backdrop">
-      <div className="w-full max-w-sm rounded-2xl p-6 animate-slideInR"
-        style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-med)',
-          boxShadow: '0 24px 80px rgba(0,0,0,0.6)' }}>
-        <h3 style={{ fontFamily: 'Geist,sans-serif', fontWeight: 700, fontSize: '1rem', marginBottom: 6 }}>
-          Bulk Update
-        </h3>
-        <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: 16 }}>
-          Update status for <strong style={{ color: 'var(--accent-cyan)' }}>{count}</strong> selected site{count !== 1 ? 's' : ''}:
-        </p>
-        <div className="flex flex-col gap-2 mb-5">
-          {opts.map(o => (
-            <button key={o.value} onClick={() => { onBulk(o.value); onClose() }}
-              className="py-3 rounded-xl font-mono transition-all cursor-pointer"
-              style={{ background: o.bg, border: `1px solid ${o.border}`, color: o.color,
-                fontSize: '0.82rem', fontWeight: 700, textAlign: 'left', paddingLeft: 16 }}>
-              {o.label}
-            </button>
-          ))}
+    <div style={{ position: 'fixed', inset: 0, zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, background: 'rgba(13,17,23,0.4)', backdropFilter: 'blur(8px)' }} onClick={function(e) { if (e.target === e.currentTarget) onClose() }}>
+      <div className="anim-scaleIn" style={{ background: 'var(--surface)', borderRadius: 20, padding: '28px 30px', width: '100%', maxWidth: 460, boxShadow: 'var(--shadow-xl)', border: '1px solid var(--border)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+          <div><h2 style={{ fontWeight: 800, fontSize: '1rem', color: 'var(--text)' }}>Edit Site</h2><p className="mono" style={{ fontSize: '0.62rem', color: 'var(--text4)', marginTop: 2 }}>{site.id}</p></div>
+          <button onClick={onClose} className="btn btn-outline" style={{ width: 32, height: 32, padding: 0, borderRadius: 8 }}><svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
         </div>
-        <button onClick={onClose} className="btn-ghost w-full py-2.5 rounded-xl cursor-pointer"
-          style={{ fontSize: '0.84rem' }}>Cancel</button>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div><label className="mono" style={{ display: 'block', fontSize: '0.6rem', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}>Site Name</label><input value={name} onChange={function(e) { setName(e.target.value) }} className="inp" style={{ padding: '9px 12px', fontSize: '0.88rem' }} /></div>
+          <div>
+            <label className="mono" style={{ display: 'block', fontSize: '0.6rem', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8 }}>Status</label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+              {sOpts.map(function(o) {
+                const active = status === o.v
+                return <button key={o.v} onClick={function() { setStatus(o.v) }} className="btn" style={{ padding: '10px 8px', fontSize: '0.78rem', background: active ? o.bg : 'var(--surface2)', border: '1.5px solid ' + (active ? o.border : 'var(--border)'), color: active ? o.color : 'var(--text3)', fontWeight: 700, borderRadius: 10 }}>{o.label}</button>
+              })}
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div><label className="mono" style={{ display: 'block', fontSize: '0.6rem', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6, opacity: status === 'down' ? 0.4 : 1 }}>Ping (ms)</label><input type="number" value={status === 'down' ? '' : ping} onChange={function(e) { setPing(e.target.value) }} disabled={status === 'down'} placeholder="e.g. 14" className="inp mono" style={{ padding: '9px 12px', fontSize: '0.88rem', opacity: status === 'down' ? 0.4 : 1 }} /></div>
+            <div><label className="mono" style={{ display: 'block', fontSize: '0.6rem', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6, opacity: status === 'down' ? 0.4 : 1 }}>Uptime %</label><input type="number" min="0" max="100" step="0.01" value={status === 'down' ? '0' : uptime} onChange={function(e) { setUptime(e.target.value) }} disabled={status === 'down'} className="inp mono" style={{ padding: '9px 12px', fontSize: '0.88rem', opacity: status === 'down' ? 0.4 : 1 }} /></div>
+          </div>
+          <div><label className="mono" style={{ display: 'block', fontSize: '0.6rem', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}>Location</label><input value={location} onChange={function(e) { setLocation(e.target.value) }} placeholder="e.g. Islamabad" className="inp" style={{ padding: '9px 12px', fontSize: '0.88rem' }} /></div>
+          <div><label className="mono" style={{ display: 'block', fontSize: '0.6rem', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}>Notes</label><textarea value={notes} onChange={function(e) { setNotes(e.target.value) }} rows={2} placeholder="Internal notes" className="inp" style={{ padding: '9px 12px', fontSize: '0.84rem', resize: 'none' }} /></div>
+        </div>
+        <div style={{ display: 'flex', gap: 10, marginTop: 22 }}>
+          <button onClick={onClose} className="btn btn-outline" style={{ flex: 1, padding: '11px', fontSize: '0.84rem', borderRadius: 10 }}>Cancel</button>
+          <button onClick={save} disabled={saving} className="btn btn-gold" style={{ flex: 1, padding: '11px', fontSize: '0.88rem', borderRadius: 10, opacity: saving ? 0.7 : 1 }}>{saving ? 'Saving...' : 'Save Changes'}</button>
+        </div>
       </div>
     </div>
   )
 }
 
-/* ─── Toast ──────────────────────────────────────────────────────── */
-function Toast({ msg, type }: { msg: string; type: 'ok' | 'err' | 'info' }) {
-  const cfg = {
-    ok:   { bg: 'rgba(16,185,129,0.12)',  border: 'rgba(16,185,129,0.3)',  color: '#34d399', icon: '✓' },
-    err:  { bg: 'rgba(239,68,68,0.12)',   border: 'rgba(239,68,68,0.3)',   color: '#f87171', icon: '✕' },
-    info: { bg: 'rgba(0,212,255,0.08)',   border: 'rgba(0,212,255,0.25)',  color: 'var(--accent-cyan)', icon: 'ℹ' },
-  }[type]
+function AddModal({ onClose, onAdd }: { onClose: () => void; onAdd: (d: { name: string; location?: string; notes?: string }) => Promise<void> }) {
+  const [name, setName] = useState(''), [location, setLocation] = useState(''), [notes, setNotes] = useState(''), [saving, setSaving] = useState(false)
   return (
-    <div className="fixed bottom-6 right-6 z-50 animate-slideInR flex items-center gap-3 px-4 py-3 rounded-xl font-mono"
-      style={{ background: cfg.bg, border: `1px solid ${cfg.border}`, color: cfg.color,
-        fontSize: '0.8rem', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', backdropFilter: 'blur(12px)',
-        maxWidth: 340 }}>
-      <span style={{ fontSize: '0.9rem' }}>{cfg.icon}</span>
-      {msg}
+    <div style={{ position: 'fixed', inset: 0, zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, background: 'rgba(13,17,23,0.4)', backdropFilter: 'blur(8px)' }} onClick={function(e) { if (e.target === e.currentTarget) onClose() }}>
+      <div className="anim-scaleIn" style={{ background: 'var(--surface)', borderRadius: 20, padding: '28px 30px', width: '100%', maxWidth: 400, boxShadow: 'var(--shadow-xl)', border: '1px solid var(--border)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22 }}>
+          <h2 style={{ fontWeight: 800, fontSize: '1rem', color: 'var(--text)' }}>Add New Site</h2>
+          <button onClick={onClose} className="btn btn-outline" style={{ width: 32, height: 32, padding: 0, borderRadius: 8 }}><svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div><label className="mono" style={{ display: 'block', fontSize: '0.6rem', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}>Site Name *</label><input value={name} onChange={function(e) { setName(e.target.value) }} placeholder="e.g. New Branch Office" className="inp" style={{ padding: '9px 12px', fontSize: '0.88rem' }} /></div>
+          <div><label className="mono" style={{ display: 'block', fontSize: '0.6rem', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}>Location</label><input value={location} onChange={function(e) { setLocation(e.target.value) }} placeholder="e.g. Islamabad" className="inp" style={{ padding: '9px 12px', fontSize: '0.88rem' }} /></div>
+          <div><label className="mono" style={{ display: 'block', fontSize: '0.6rem', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}>Notes</label><textarea value={notes} onChange={function(e) { setNotes(e.target.value) }} rows={2} className="inp" style={{ padding: '9px 12px', fontSize: '0.84rem', resize: 'none' }} /></div>
+        </div>
+        <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
+          <button onClick={onClose} className="btn btn-outline" style={{ flex: 1, padding: '11px', fontSize: '0.84rem', borderRadius: 10 }}>Cancel</button>
+          <button onClick={async function() { if (!name.trim()) return; setSaving(true); await onAdd({ name: name.trim(), location, notes }); setSaving(false); onClose() }} disabled={saving || !name.trim()} className="btn btn-success" style={{ flex: 1, padding: '11px', fontSize: '0.84rem', borderRadius: 10, opacity: !name.trim() ? 0.5 : 1, fontWeight: 700 }}>{saving ? 'Adding...' : '+ Add Site'}</button>
+        </div>
+      </div>
     </div>
   )
 }
 
-/* ─── Admin dashboard ────────────────────────────────────────────── */
-export default function AdminDashboard() {
+function DelModal({ site, onClose, onConfirm }: { site: Site; onClose: () => void; onConfirm: () => void }) {
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, background: 'rgba(13,17,23,0.4)', backdropFilter: 'blur(8px)' }}>
+      <div className="anim-scaleIn" style={{ background: 'var(--surface)', borderRadius: 20, padding: '28px 30px', width: '100%', maxWidth: 380, boxShadow: 'var(--shadow-xl)', border: '1px solid var(--red3)' }}>
+        <div style={{ width: 44, height: 44, borderRadius: 12, background: 'var(--red2)', border: '1px solid var(--red3)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
+          <svg width="20" height="20" fill="none" stroke="var(--red)" strokeWidth="2.5" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
+        </div>
+        <h3 style={{ fontWeight: 800, fontSize: '1rem', color: 'var(--text)', marginBottom: 8 }}>Delete Site</h3>
+        <p style={{ fontSize: '0.84rem', color: 'var(--text2)', marginBottom: 22, lineHeight: 1.65 }}>Remove <strong style={{ color: 'var(--text)' }}>{site.name}</strong> permanently? This cannot be undone.</p>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button onClick={onClose} className="btn btn-outline" style={{ flex: 1, padding: '11px', fontSize: '0.84rem', borderRadius: 10 }}>Cancel</button>
+          <button onClick={onConfirm} className="btn btn-danger" style={{ flex: 1, padding: '11px', fontSize: '0.84rem', borderRadius: 10, fontWeight: 700 }}>Delete</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function BulkModal({ count, onClose, onBulk }: { count: number; onClose: () => void; onBulk: (s: SiteStatus) => void }) {
+  const opts: { v: SiteStatus; label: string; desc: string; color: string; bg: string; border: string }[] = [
+    { v: 'online',   label: 'Set Online',   desc: 'Mark as fully operational',    color: 'var(--green)', bg: 'var(--green2)', border: 'var(--green3)' },
+    { v: 'degraded', label: 'Set Degraded', desc: 'Mark as high latency/partial', color: 'var(--amber)', bg: 'var(--amber2)', border: 'var(--amber3)' },
+    { v: 'down',     label: 'Set Down',     desc: 'Mark as completely offline',   color: 'var(--red)',   bg: 'var(--red2)',   border: 'var(--red3)' },
+  ]
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, background: 'rgba(13,17,23,0.4)', backdropFilter: 'blur(8px)' }}>
+      <div className="anim-scaleIn" style={{ background: 'var(--surface)', borderRadius: 20, padding: '28px 30px', width: '100%', maxWidth: 380, boxShadow: 'var(--shadow-xl)', border: '1px solid var(--border)' }}>
+        <h3 style={{ fontWeight: 800, fontSize: '1rem', color: 'var(--text)', marginBottom: 6 }}>Bulk Update</h3>
+        <p style={{ fontSize: '0.82rem', color: 'var(--text3)', marginBottom: 18 }}>Update <strong style={{ color: 'var(--gold)' }}>{count}</strong> selected site{count !== 1 ? 's' : ''}:</p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+          {opts.map(function(o) {
+            return (
+              <button key={o.v} onClick={function() { onBulk(o.v); onClose() }} className="btn" style={{ padding: '12px 16px', justifyContent: 'flex-start', background: o.bg, border: '1.5px solid ' + o.border, color: o.color, borderRadius: 12, gap: 12, fontWeight: 600 }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: o.color, flexShrink: 0 }} />
+                <div style={{ textAlign: 'left' }}>
+                  <div style={{ fontSize: '0.84rem', fontWeight: 700 }}>{o.label}</div>
+                  <div style={{ fontSize: '0.7rem', opacity: 0.7, fontWeight: 400, marginTop: 1 }}>{o.desc}</div>
+                </div>
+              </button>
+            )
+          })}
+        </div>
+        <button onClick={onClose} className="btn btn-outline" style={{ width: '100%', padding: '10px', fontSize: '0.84rem', borderRadius: 10 }}>Cancel</button>
+      </div>
+    </div>
+  )
+}
+
+export default function Admin() {
   const router = useRouter()
   const [sites, setSites] = useState<Site[]>([])
   const [loading, setLoading] = useState(true)
-  const [adminEmail, setAdminEmail] = useState('')
-  const [editSite, setEditSite] = useState<Site | null>(null)
-  const [deleteSite_, setDeleteSite] = useState<Site | null>(null)
-  const [showAdd, setShowAdd] = useState(false)
-  const [showBulk, setShowBulk] = useState(false)
+  const [email, setEmail] = useState('')
+  const [edit, setEdit] = useState<Site | null>(null)
+  const [del, setDel] = useState<Site | null>(null)
+  const [addOpen, setAddOpen] = useState(false)
+  const [bulkOpen, setBulkOpen] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [search, setSearch] = useState('')
-  const [filterStatus, setFilterStatus] = useState('all')
-  const [toast, setToast] = useState<{ msg: string; type: 'ok' | 'err' | 'info' } | null>(null)
-  const [lastRefresh, setLastRefresh] = useState(new Date())
-  const timerRef = useRef<NodeJS.Timeout | null>(null)
-  const toastRef = useRef<NodeJS.Timeout | null>(null)
+  const [filter, setFilter] = useState('all')
+  const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
+  const [synced, setSynced] = useState('')
+  const timer = useRef<ReturnType<typeof setInterval> | null>(null)
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const showToast = (msg: string, type: 'ok' | 'err' | 'info' = 'ok') => {
-    if (toastRef.current) clearTimeout(toastRef.current)
-    setToast({ msg, type })
-    toastRef.current = setTimeout(() => setToast(null), 3200)
+  function notify(msg: string, ok = true) {
+    if (toastTimer.current) clearTimeout(toastTimer.current)
+    setToast({ msg, ok }); toastTimer.current = setTimeout(function() { setToast(null) }, 3000)
   }
 
-  useEffect(() => {
-    fetch('/api/auth/me').then(r => {
+  useEffect(function() {
+    fetch('/api/auth/me').then(function(r) {
       if (!r.ok) router.replace('/admin/login')
-      else r.json().then(d => setAdminEmail(d.email))
+      else r.json().then(function(d) { setEmail(d.email) })
     })
   }, [router])
 
-  const fetchSites = useCallback(async () => {
+  const fetch_ = useCallback(async function() {
     const r = await fetch('/api/sites', { cache: 'no-store' })
-    if (r.ok) { setSites(await r.json()); setLastRefresh(new Date()); setLoading(false) }
+    if (r.ok) {
+      setSites(await r.json()); setLoading(false)
+      const n = new Date(), p = function(x: number) { return String(x).padStart(2,'0') }
+      setSynced(p(n.getHours()) + ':' + p(n.getMinutes()) + ':' + p(n.getSeconds()))
+    }
   }, [])
 
-  useEffect(() => {
-    fetchSites()
-    timerRef.current = setInterval(fetchSites, 4000)
-    return () => { if (timerRef.current) clearInterval(timerRef.current) }
-  }, [fetchSites])
+  useEffect(function() { fetch_(); timer.current = setInterval(fetch_, 4000); return function() { if (timer.current) clearInterval(timer.current) } }, [fetch_])
 
-  const handleLogout = async () => {
-    await fetch('/api/auth/logout', { method: 'POST' })
-    router.push('/admin/login')
+  async function logout() { await fetch('/api/auth/logout', { method: 'POST' }); router.push('/admin/login') }
+  async function save_(id: string, patch: Partial<Site>) { const r = await fetch('/api/sites/' + id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) }); if (r.ok) { await fetch_(); notify('Site updated') } else notify('Failed to update', false) }
+  async function del_(id: string) { const r = await fetch('/api/sites/' + id, { method: 'DELETE' }); if (r.ok) { setDel(null); await fetch_(); notify('Site deleted') } else notify('Failed to delete', false) }
+  async function add_(data: { name: string; location?: string; notes?: string }) { const r = await fetch('/api/sites', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }); if (r.ok) { await fetch_(); notify('Site added') } else notify('Failed to add', false) }
+  async function bulk_(status: SiteStatus) {
+    await Promise.all([...selected].map(function(id) { return fetch('/api/sites/' + id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) }) }))
+    const count = selected.size; setSelected(new Set()); await fetch_(); notify(count + ' sites updated to ' + status)
   }
 
-  const handleSave = async (id: string, patch: Partial<Site>) => {
-    const r = await fetch(`/api/sites/${id}`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(patch),
-    })
-    if (r.ok) { await fetchSites(); showToast('Site updated successfully') }
-    else showToast('Failed to update site', 'err')
-  }
+  function toggleSel(id: string) { setSelected(function(p) { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n }) }
+  const filtered = sites.filter(function(s) { return s.name.toLowerCase().includes(search.toLowerCase()) && (filter === 'all' || s.status === filter) })
+  function toggleAll() { setSelected(selected.size === filtered.length ? new Set() : new Set(filtered.map(function(s) { return s.id }))) }
 
-  const handleDelete = async (id: string) => {
-    const r = await fetch(`/api/sites/${id}`, { method: 'DELETE' })
-    if (r.ok) { setDeleteSite(null); await fetchSites(); showToast('Site deleted') }
-    else showToast('Failed to delete', 'err')
-  }
-
-  const handleAdd = async (data: { name: string; location?: string; notes?: string }) => {
-    const r = await fetch('/api/sites', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    })
-    if (r.ok) { await fetchSites(); showToast('Site added successfully') }
-    else showToast('Failed to add site', 'err')
-  }
-
-  const handleBulk = async (status: SiteStatus) => {
-    await Promise.all([...selected].map(id =>
-      fetch(`/api/sites/${id}`, {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status }),
-      })
-    ))
-    const count = selected.size
-    setSelected(new Set())
-    await fetchSites()
-    showToast(`${count} sites set to ${status}`)
-  }
-
-  const toggleSelect = (id: string) => {
-    setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
-  }
-  const filtered = sites.filter(s => {
-    const nm = s.name.toLowerCase().includes(search.toLowerCase())
-    const st = filterStatus === 'all' || s.status === filterStatus
-    return nm && st
-  })
-  const toggleAll = () => {
-    setSelected(selected.size === filtered.length ? new Set() : new Set(filtered.map(s => s.id)))
-  }
-
-  const online = sites.filter(s => s.status === 'online').length
-  const degraded = sites.filter(s => s.status === 'degraded').length
-  const down = sites.filter(s => s.status === 'down').length
+  const online = sites.filter(function(s) { return s.status === 'online' }).length
+  const degraded = sites.filter(function(s) { return s.status === 'degraded' }).length
+  const down = sites.filter(function(s) { return s.status === 'down' }).length
 
   if (loading) return (
-    <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--bg-base)' }}>
-      <div className="flex flex-col items-center gap-4">
-        <div className="w-10 h-10 rounded-full animate-spin-fast"
-          style={{ border: '2px solid var(--border-dim)', borderTopColor: 'var(--accent-cyan)' }} />
-        <span className="font-mono" style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)' }}>Loading admin panel…</span>
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg)' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
+        <div className="anim-spin" style={{ width: 36, height: 36, border: '3px solid var(--border2)', borderTopColor: 'var(--gold)', borderRadius: '50%' }} />
+        <span className="mono" style={{ fontSize: '0.72rem', color: 'var(--text3)' }}>Loading admin panel...</span>
       </div>
     </div>
   )
 
   return (
-    <div className="min-h-screen" style={{ background: 'var(--bg-base)' }}>
-      <div className="top-accent fixed top-0 left-0 right-0 z-20" style={{ height: 2 }} />
-
-      {/* Header */}
-      <header className="sticky top-0 z-10"
-        style={{ background: 'rgba(6,9,16,0.9)', backdropFilter: 'blur(24px)',
-          borderBottom: '1px solid var(--border-dim)' }}>
-        <div className="max-w-[1400px] mx-auto px-6 h-14 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center"
-              style={{ background: 'rgba(0,212,255,0.1)', border: '1px solid rgba(0,212,255,0.2)' }}>
-              <span style={{ fontFamily: 'Geist,sans-serif', fontWeight: 900, fontSize: '0.78rem', color: 'var(--accent-cyan)' }}>IG</span>
+    <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
+      <div style={{ height: 3, background: 'linear-gradient(90deg, transparent, #c9a84c, #e8c060, #c9a84c, transparent)', position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100 }} />
+      <header style={{ position: 'sticky', top: 0, zIndex: 40, background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(20px)', borderBottom: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}>
+        <div style={{ maxWidth: 1400, margin: '0 auto', padding: '0 24px', height: 60, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ width: 34, height: 34, borderRadius: 9, background: 'linear-gradient(135deg, #c9a84c, #e8c060)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <svg width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M2 16L10 4L18 16H2Z" fill="white" fillOpacity="0.95" /><path d="M5.5 16L10 9L14.5 16H5.5Z" fill="rgba(201,168,76,0.5)" /></svg>
             </div>
-            <span style={{ fontFamily: 'Geist,sans-serif', fontWeight: 700, fontSize: '0.9rem', letterSpacing: '-0.02em' }}>
-              Network Admin
-            </span>
-            <span className="font-mono px-2 py-0.5 rounded-md"
-              style={{ fontSize: '0.6rem', background: 'rgba(0,212,255,0.08)',
-                border: '1px solid rgba(0,212,255,0.2)', color: 'var(--accent-cyan)', letterSpacing: '0.1em' }}>
-              NMS v2.1
-            </span>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: '0.88rem', color: 'var(--text)', letterSpacing: '-0.02em', lineHeight: 1 }}>Imarat Group</div>
+              <div className="mono" style={{ fontSize: '0.54rem', color: 'var(--text3)', letterSpacing: '0.1em', textTransform: 'uppercase', marginTop: 2 }}>Admin Panel</div>
+            </div>
+            <div style={{ padding: '3px 8px', borderRadius: 6, background: 'var(--gold4)', border: '1px solid var(--gold3)' }}>
+              <span className="mono" style={{ fontSize: '0.58rem', fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.1em' }}>NMS v2</span>
+            </div>
           </div>
-
-          <div className="flex items-center gap-5">
-            <LiveClock />
-            <div className="hidden sm:flex items-center gap-2">
-              <div className="w-1.5 h-1.5 rounded-full" style={{ background: '#10b981' }} />
-              <span className="font-mono" style={{ fontSize: '0.68rem', color: 'var(--text-tertiary)' }}>
-                {adminEmail}
-              </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <Clock />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 7, background: 'var(--green2)', border: '1px solid var(--green3)' }}>
+              <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--green)', animation: 'pulseGlow 2s ease-in-out infinite' }} />
+              <span className="mono" style={{ fontSize: '0.62rem', color: 'var(--green)', fontWeight: 700 }}>{email.split('@')[0]}</span>
             </div>
-            <a href="/" target="_blank" className="btn-ghost px-3 py-1.5 rounded-lg font-mono transition-all"
-              style={{ fontSize: '0.7rem', textDecoration: 'none', cursor: 'pointer' }}>
-              Status ↗
+            <a href="/" target="_blank" className="btn btn-outline" style={{ padding: '6px 12px', fontSize: '0.72rem', borderRadius: 8, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+              <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a1 1 0 011-1h6M15 3h6v6M10 14L21 3"/></svg>Status Page
             </a>
-            <button onClick={handleLogout} className="btn-danger px-3 py-1.5 rounded-lg font-mono transition-all cursor-pointer"
-              style={{ fontSize: '0.7rem' }}>
-              Sign Out
-            </button>
+            <button onClick={logout} className="btn btn-danger" style={{ padding: '6px 12px', fontSize: '0.72rem', borderRadius: 8 }}>Sign Out</button>
           </div>
         </div>
       </header>
 
-      <main className="max-w-[1400px] mx-auto px-6 py-7">
-        {/* Summary cards */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-          {[
-            { label: 'Total Sites',  value: sites.length, color: 'var(--accent-cyan)', bg: 'rgba(0,212,255,0.05)', border: 'rgba(0,212,255,0.12)', glow: 'stat-glow-cyan',  icon: '#' },
-            { label: 'Online',       value: online,       color: '#34d399',            bg: 'rgba(16,185,129,0.05)', border: 'rgba(16,185,129,0.12)', glow: 'stat-glow-green', icon: '↑' },
-            { label: 'Degraded',     value: degraded,     color: '#fbbf24',            bg: 'rgba(245,158,11,0.05)', border: 'rgba(245,158,11,0.12)', glow: 'stat-glow-amber', icon: '~' },
-            { label: 'Down',         value: down,         color: '#f87171',            bg: 'rgba(239,68,68,0.05)',  border: 'rgba(239,68,68,0.12)',  glow: 'stat-glow-red',   icon: '↓' },
-          ].map(c => (
-            <div key={c.label} className={`rounded-xl p-4 ${c.glow} row-enter`}
-              style={{ background: c.bg, border: `1px solid ${c.border}` }}>
-              <div className="flex items-center justify-between mb-2">
-                <span style={{ fontSize: '0.62rem', fontWeight: 700, color: 'var(--text-tertiary)',
-                  textTransform: 'uppercase', letterSpacing: '0.1em' }}>{c.label}</span>
-                <span className="font-mono w-6 h-6 rounded-lg flex items-center justify-center"
-                  style={{ fontSize: '0.78rem', background: `${c.border}`, color: c.color }}>{c.icon}</span>
+      <main style={{ maxWidth: 1400, margin: '0 auto', padding: '24px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginBottom: 22 }}>
+          {[{ label: 'Total', val: sites.length, color: 'var(--blue)', border: '#bfdbfe' },{ label: 'Online', val: online, color: 'var(--green)', border: 'var(--green3)' },{ label: 'Degraded', val: degraded, color: 'var(--amber)', border: 'var(--amber3)' },{ label: 'Down', val: down, color: 'var(--red)', border: 'var(--red3)' }].map(function(c) {
+            return (
+              <div key={c.label} className="card" style={{ padding: '14px 16px', borderLeft: '3px solid ' + c.border }}>
+                <div style={{ fontSize: '0.62rem', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>{c.label}</div>
+                <div style={{ fontWeight: 800, fontSize: '1.9rem', color: c.color, letterSpacing: '-0.04em', lineHeight: 1 }}>{c.val}</div>
               </div>
-              <div style={{ fontFamily: 'Geist,sans-serif', fontSize: '2.2rem', fontWeight: 800,
-                color: c.color, letterSpacing: '-0.04em', lineHeight: 1 }}>{c.value}</div>
-            </div>
-          ))}
+            )
+          })}
         </div>
 
-        {/* Toolbar */}
-        <div className="flex flex-wrap items-center gap-3 mb-4">
-          {/* Search */}
-          <div className="relative flex-1 min-w-52">
-            <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-mono"
-              style={{ color: 'var(--text-tertiary)', fontSize: '0.9rem', pointerEvents: 'none' }}>⌕</span>
-            <input value={search} onChange={e => setSearch(e.target.value)}
-              placeholder="Search sites…"
-              className="input-field w-full pl-9 pr-4 py-2.5 rounded-xl"
-              style={{ fontSize: '0.84rem' }} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+          <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
+            <input value={search} onChange={function(e) { setSearch(e.target.value) }} placeholder="Search sites..." className="inp" style={{ padding: '9px 12px 9px 36px', fontSize: '0.82rem' }} />
+            <svg style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: 'var(--text4)', pointerEvents: 'none' }} width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
           </div>
-
-          {/* Status filter */}
-          <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
-            className="input-field py-2.5 px-3.5 rounded-xl cursor-pointer"
-            style={{ fontSize: '0.82rem', minWidth: 140 }}>
-            <option value="all">All Statuses</option>
-            <option value="online">Online</option>
-            <option value="degraded">Degraded</option>
-            <option value="down">Down</option>
+          <select value={filter} onChange={function(e) { setFilter(e.target.value) }} className="inp" style={{ padding: '9px 12px', fontSize: '0.82rem', width: 'auto', cursor: 'pointer' }}>
+            <option value="all">All Statuses</option><option value="online">Online</option><option value="degraded">Degraded</option><option value="down">Down</option>
           </select>
-
-          {/* Bulk button */}
-          {selected.size > 0 && (
-            <button onClick={() => setShowBulk(true)}
-              className="px-4 py-2.5 rounded-xl font-mono transition-all cursor-pointer"
-              style={{ background: 'rgba(0,212,255,0.08)', border: '1px solid rgba(0,212,255,0.25)',
-                color: 'var(--accent-cyan)', fontSize: '0.8rem', fontWeight: 700 }}>
-              Bulk Update ({selected.size})
-            </button>
-          )}
-
-          {/* Refresh info */}
-          <span className="font-mono hidden sm:block" style={{ fontSize: '0.65rem', color: 'var(--text-tertiary)' }}>
-            Last sync {lastRefresh.toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-          </span>
-
-          {/* Add site */}
-          <button onClick={() => setShowAdd(true)}
-            className="btn-primary ml-auto px-4 py-2.5 rounded-xl cursor-pointer"
-            style={{ fontSize: '0.84rem', fontFamily: 'Geist,sans-serif', fontWeight: 700 }}>
-            + Add Site
+          {selected.size > 0 && <button onClick={function() { setBulkOpen(true) }} className="btn btn-outline" style={{ padding: '9px 14px', fontSize: '0.78rem', borderRadius: 8, borderColor: 'var(--gold)', color: 'var(--gold)', fontWeight: 700 }}>Bulk Update ({selected.size})</button>}
+          {synced && <span className="mono" style={{ fontSize: '0.63rem', color: 'var(--text4)' }}>Synced {synced}</span>}
+          <button onClick={function() { setAddOpen(true) }} className="btn btn-gold" style={{ padding: '9px 18px', fontSize: '0.82rem', borderRadius: 9, marginLeft: 'auto' }}>
+            <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Add Site
           </button>
         </div>
 
-        {/* Table */}
-        <div className="glass rounded-xl overflow-hidden" style={{ border: '1px solid var(--border-dim)' }}>
-          {/* Table header */}
-          <div className="grid px-5 py-3 items-center"
-            style={{ gridTemplateColumns: '36px 2fr 110px 100px 90px 120px 1fr 120px',
-              borderBottom: '1px solid var(--border-dim)',
-              background: 'rgba(255,255,255,0.015)' }}>
-            <input type="checkbox" className="accent-cyan-400"
-              checked={selected.size === filtered.length && filtered.length > 0}
-              onChange={toggleAll} />
-            {['Site Name', 'Status', 'Ping', '24H Up', 'Location', 'Notes', 'Actions'].map(h => (
-              <div key={h} className="font-mono"
-                style={{ fontSize: '0.6rem', fontWeight: 700, color: 'var(--text-tertiary)',
-                  textTransform: 'uppercase', letterSpacing: '0.1em' }}>{h}</div>
-            ))}
+        <div className="card" style={{ overflow: 'hidden' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '40px 2fr 115px 100px 90px 120px 1fr 120px', padding: '10px 18px', background: 'var(--surface2)', borderBottom: '1px solid var(--border)' }}>
+            <input type="checkbox" checked={selected.size === filtered.length && filtered.length > 0} onChange={toggleAll} style={{ accentColor: 'var(--gold)', cursor: 'pointer' }} />
+            {['Site Name','Status','Ping','24H Up','Location','Notes','Actions'].map(function(h) { return <div key={h} className="mono" style={{ fontSize: '0.6rem', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{h}</div> })}
           </div>
-
           {filtered.length === 0 ? (
-            <div className="py-20 text-center font-mono" style={{ color: 'var(--text-tertiary)', fontSize: '0.8rem' }}>
-              No sites match your filter
+            <div style={{ padding: '60px 20px', textAlign: 'center', color: 'var(--text3)' }}>
+              <div className="mono" style={{ fontSize: '0.8rem' }}>No sites match your filter</div>
             </div>
-          ) : (
-            filtered.map((site, idx) => (
-              <div key={site.id}
-                className="table-row row-enter grid px-5 py-3 items-center"
-                style={{ gridTemplateColumns: '36px 2fr 110px 100px 90px 120px 1fr 120px',
-                  animationDelay: `${idx * 18}ms`,
-                  background: selected.has(site.id) ? 'rgba(0,212,255,0.03)' : undefined }}>
-                <input type="checkbox" className="accent-cyan-400"
-                  checked={selected.has(site.id)} onChange={() => toggleSelect(site.id)} />
-
-                {/* Name */}
-                <div>
-                  <div style={{ fontSize: '0.84rem', fontWeight: 500, color: 'rgba(255,255,255,0.9)' }}>
-                    {site.name}
-                  </div>
-                  <div className="font-mono mt-0.5" style={{ fontSize: '0.6rem', color: 'var(--text-tertiary)' }}>
-                    {site.id}
-                  </div>
-                </div>
-
-                {/* Status */}
-                <div><StatusBadge status={site.status} /></div>
-
-                {/* Ping */}
-                <div className="font-mono" style={{ fontSize: '0.8rem', fontWeight: 600,
-                  color: site.status === 'down' ? '#ef4444' : site.status === 'degraded' ? '#f59e0b' : '#34d399' }}>
-                  {site.status === 'down' ? '—' : site.pingMs ? `${site.pingMs} ms` : '—'}
-                </div>
-
-                {/* Uptime */}
-                <div className="font-mono" style={{ fontSize: '0.8rem', fontWeight: 600,
-                  color: site.uptime24h >= 99 ? '#34d399' : site.uptime24h >= 80 ? '#fbbf24' : '#f87171' }}>
-                  {site.status === 'down' ? '0%' : `${site.uptime24h.toFixed(1)}%`}
-                </div>
-
-                {/* Location */}
-                <div className="font-mono" style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)',
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {site.location || '—'}
-                </div>
-
-                {/* Notes */}
-                <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)',
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {site.notes || '—'}
-                </div>
-
-                {/* Actions */}
-                <div className="flex gap-2">
-                  <button onClick={() => setEditSite(site)}
-                    className="px-3 py-1.5 rounded-lg font-mono cursor-pointer transition-all"
-                    style={{ fontSize: '0.7rem', fontWeight: 700,
-                      background: 'rgba(0,212,255,0.06)', border: '1px solid rgba(0,212,255,0.2)',
-                      color: 'var(--accent-cyan)' }}>
-                    Edit
-                  </button>
-                  <button onClick={() => setDeleteSite(site)}
-                    className="btn-danger px-3 py-1.5 rounded-lg font-mono cursor-pointer"
-                    style={{ fontSize: '0.7rem', fontWeight: 700 }}>
-                    Del
-                  </button>
+          ) : filtered.map(function(site, idx) {
+            const pingColor = site.status === 'down' ? 'var(--red)' : site.status === 'degraded' ? 'var(--amber)' : 'var(--green)'
+            const upColor = site.uptime24h >= 99 ? 'var(--green)' : site.uptime24h >= 80 ? 'var(--amber)' : 'var(--red)'
+            return (
+              <div key={site.id} className="trow anim-fadeUp" style={{ display: 'grid', gridTemplateColumns: '40px 2fr 115px 100px 90px 120px 1fr 120px', padding: '12px 18px', alignItems: 'center', animationDelay: (idx * 15) + 'ms', background: selected.has(site.id) ? 'var(--gold4)' : undefined }}>
+                <input type="checkbox" checked={selected.has(site.id)} onChange={function() { toggleSel(site.id) }} style={{ accentColor: 'var(--gold)', cursor: 'pointer' }} />
+                <div><div style={{ fontWeight: 600, fontSize: '0.84rem', color: 'var(--text)' }}>{site.name}</div><div className="mono" style={{ fontSize: '0.6rem', color: 'var(--text4)', marginTop: 2 }}>{site.id}</div></div>
+                <div><SBadge status={site.status} /></div>
+                <div className="mono" style={{ fontSize: '0.82rem', fontWeight: 700, color: pingColor }}>{site.status === 'down' ? '-' : site.pingMs ? site.pingMs + ' ms' : '-'}</div>
+                <div className="mono" style={{ fontSize: '0.82rem', fontWeight: 700, color: upColor }}>{site.status === 'down' ? '0%' : site.uptime24h.toFixed(1) + '%'}</div>
+                <div className="mono" style={{ fontSize: '0.72rem', color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{site.location || '-'}</div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{site.notes || '-'}</div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button onClick={function() { setEdit(site) }} className="btn btn-outline" style={{ padding: '5px 12px', fontSize: '0.72rem', borderRadius: 7, fontWeight: 700 }}>Edit</button>
+                  <button onClick={function() { setDel(site) }} className="btn btn-danger" style={{ padding: '5px 10px', fontSize: '0.72rem', borderRadius: 7, fontWeight: 700 }}>Del</button>
                 </div>
               </div>
-            ))
-          )}
+            )
+          })}
         </div>
-
-        <div className="mt-3 flex items-center justify-between font-mono"
-          style={{ fontSize: '0.65rem', color: 'var(--text-tertiary)' }}>
-          <span>{filtered.length} of {sites.length} sites</span>
-          <span>Auto-refreshes every 4s</span>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10 }}>
+          <span className="mono" style={{ fontSize: '0.63rem', color: 'var(--text4)' }}>{filtered.length} of {sites.length} sites</span>
+          <span className="mono" style={{ fontSize: '0.63rem', color: 'var(--text4)' }}>Auto-syncs every 4s</span>
         </div>
       </main>
 
-      {/* Modals */}
-      {editSite && <EditModal site={editSite} onClose={() => setEditSite(null)} onSave={handleSave} />}
-      {deleteSite_ && <ConfirmDelete site={deleteSite_} onClose={() => setDeleteSite(null)} onConfirm={() => handleDelete(deleteSite_!.id)} />}
-      {showAdd && <AddModal onClose={() => setShowAdd(false)} onAdd={handleAdd} />}
-      {showBulk && <BulkModal count={selected.size} onClose={() => setShowBulk(false)} onBulk={handleBulk} />}
-      {toast && <Toast msg={toast.msg} type={toast.type} />}
+      {edit && <EditModal site={edit} onClose={function() { setEdit(null) }} onSave={save_} />}
+      {del && <DelModal site={del} onClose={function() { setDel(null) }} onConfirm={function() { del_(del.id) }} />}
+      {addOpen && <AddModal onClose={function() { setAddOpen(false) }} onAdd={add_} />}
+      {bulkOpen && <BulkModal count={selected.size} onClose={function() { setBulkOpen(false) }} onBulk={bulk_} />}
+      {toast && (
+        <div className="anim-slideDown" style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 200, padding: '12px 18px', borderRadius: 12, background: toast.ok ? 'var(--green2)' : 'var(--red2)', border: '1px solid ' + (toast.ok ? 'var(--green3)' : 'var(--red3)'), color: toast.ok ? 'var(--green)' : 'var(--red)', fontSize: '0.82rem', fontWeight: 600, boxShadow: 'var(--shadow-lg)', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">{toast.ok ? <path d="M20 6L9 17l-5-5"/> : <><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></>}</svg>
+          {toast.msg}
+        </div>
+      )}
     </div>
   )
 }

@@ -1,8 +1,8 @@
-'use client'
+﻿'use client'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 
-export default function AdminLogin() {
+export default function Login() {
   const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -10,167 +10,84 @@ export default function AdminLogin() {
   const [loading, setLoading] = useState(false)
   const [checking, setChecking] = useState(true)
   const [showPass, setShowPass] = useState(false)
-  const [focused, setFocused] = useState<string | null>(null)
 
-  useEffect(() => {
-    fetch('/api/auth/me').then(r => {
+  useEffect(function() {
+    fetch('/api/auth/me').then(function(r) {
       if (r.ok) router.replace('/admin')
       else setChecking(false)
-    }).catch(() => setChecking(false))
+    }).catch(function() { setChecking(false) })
   }, [router])
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setLoading(true); setError('')
+  async function submit(e: React.FormEvent) {
+    e.preventDefault(); setLoading(true); setError('')
     try {
-      const r = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
-      })
+      const r = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: email.trim().toLowerCase(), password }) })
       if (r.ok) router.push('/admin')
-      else {
-        const d = await r.json()
-        setError(d.error ?? 'Authentication failed')
-      }
-    } catch { setError('Network error. Please try again.') }
+      else { const d = await r.json(); setError(d.error || 'Invalid credentials') }
+    } catch(e) { setError('Network error. Please try again.') }
     finally { setLoading(false) }
   }
 
   if (checking) return (
-    <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--bg-base)' }}>
-      <div className="w-8 h-8 rounded-full animate-spin-fast"
-        style={{ border: '2px solid var(--border-dim)', borderTopColor: 'var(--accent-cyan)' }} />
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg)' }}>
+      <div className="anim-spin" style={{ width: 28, height: 28, border: '3px solid var(--border2)', borderTopColor: 'var(--gold)', borderRadius: '50%' }} />
     </div>
   )
 
   return (
-    <div className="min-h-screen dot-grid flex items-center justify-center px-4 relative overflow-hidden"
-      style={{ background: 'var(--bg-base)' }}>
-      {/* Ambient blobs */}
-      <div className="absolute pointer-events-none" style={{
-        top: '20%', left: '15%', width: 500, height: 500,
-        background: 'radial-gradient(circle,rgba(0,212,255,0.05) 0%,transparent 70%)',
-        filter: 'blur(60px)' }} />
-      <div className="absolute pointer-events-none" style={{
-        bottom: '20%', right: '15%', width: 400, height: 400,
-        background: 'radial-gradient(circle,rgba(0,255,136,0.04) 0%,transparent 70%)',
-        filter: 'blur(60px)' }} />
-
-      {/* Top accent */}
-      <div className="top-accent fixed top-0 left-0 right-0" style={{ height: 2 }} />
-
-      <div className="relative w-full max-w-md animate-fadeUp">
-        {/* Card */}
-        <div className="glass-elevated rounded-2xl p-8 relative overflow-hidden"
-          style={{ border: '1px solid var(--border-med)', boxShadow: '0 24px 80px rgba(0,0,0,0.5)' }}>
-          {/* Inner glow */}
-          <div className="absolute inset-0 pointer-events-none rounded-2xl"
-            style={{ background: 'radial-gradient(ellipse at 50% 0%,rgba(0,212,255,0.05),transparent 60%)' }} />
-
-          <div className="relative z-10">
-            {/* Logo + brand */}
-            <div className="flex flex-col items-center mb-8">
-              <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4"
-                style={{ background: 'linear-gradient(135deg,rgba(0,212,255,0.12),rgba(0,255,136,0.06))',
-                  border: '1px solid rgba(0,212,255,0.3)',
-                  boxShadow: '0 0 40px rgba(0,212,255,0.12), inset 0 1px 0 rgba(0,212,255,0.2)' }}>
-                <span style={{ fontFamily: 'Geist,sans-serif', fontWeight: 900, fontSize: '1.5rem', color: 'var(--accent-cyan)' }}>IG</span>
-              </div>
-              <h1 style={{ fontFamily: 'Geist,sans-serif', fontWeight: 800, fontSize: '1.35rem',
-                letterSpacing: '-0.03em', color: 'var(--text-primary)', marginBottom: 4 }}>
-                Network Admin
-              </h1>
-              <p className="font-mono text-center" style={{ fontSize: '0.65rem', color: 'var(--text-tertiary)',
-                letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-                Imarat Group Operations Center
-              </p>
+    <div style={{ minHeight: '100vh', background: 'radial-gradient(ellipse at 60% 40%, #fffdf5 0%, #f5f0e0 60%, #eeeade 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, position: 'relative', overflow: 'hidden' }}>
+      <div style={{ position: 'absolute', top: '10%', right: '8%', width: 400, height: 400, borderRadius: '50%', background: 'radial-gradient(circle, rgba(201,168,76,0.08) 0%, transparent 70%)', pointerEvents: 'none' }} />
+      <div style={{ position: 'absolute', bottom: '10%', left: '5%', width: 300, height: 300, borderRadius: '50%', background: 'radial-gradient(circle, rgba(22,163,74,0.05) 0%, transparent 70%)', pointerEvents: 'none' }} />
+      <div style={{ position: 'absolute', inset: 0, backgroundImage: 'radial-gradient(circle, rgba(184,134,11,0.04) 1px, transparent 1px)', backgroundSize: '28px 28px', pointerEvents: 'none' }} />
+      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, height: 3, background: 'linear-gradient(90deg, transparent, #c9a84c, #e8c060, #c9a84c, transparent)', zIndex: 10 }} />
+      <div className="anim-scaleIn" style={{ width: '100%', maxWidth: 420 }}>
+        <div style={{ background: 'rgba(255,255,255,0.95)', borderRadius: 24, padding: '40px 36px', boxShadow: '0 24px 80px rgba(0,0,0,0.12)', border: '1px solid rgba(255,255,255,0.9)', backdropFilter: 'blur(20px)' }}>
+          <div style={{ textAlign: 'center', marginBottom: 32 }}>
+            <div className="anim-float" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 64, height: 64, borderRadius: 18, background: 'linear-gradient(135deg, #c9a84c, #e8c060)', boxShadow: '0 8px 28px rgba(201,168,76,0.35)', marginBottom: 16 }}>
+              <svg width="30" height="30" viewBox="0 0 30 30" fill="none"><path d="M3 24L15 5L27 24H3Z" fill="white" fillOpacity="0.95" /><path d="M8 24L15 12L22 24H8Z" fill="rgba(201,168,76,0.5)" /></svg>
             </div>
-
-            <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-              {/* Email field */}
-              <div>
-                <label className="font-mono" style={{ display: 'block', fontSize: '0.62rem',
-                  color: focused === 'email' ? 'var(--accent-cyan)' : 'var(--text-tertiary)',
-                  textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8,
-                  transition: 'color 0.2s' }}>
-                  Email Address
-                </label>
-                <input
-                  type="email" value={email} onChange={e => setEmail(e.target.value)}
-                  onFocus={() => setFocused('email')} onBlur={() => setFocused(null)}
-                  placeholder="admin@imarat.com.pk" required
-                  className="input-field w-full px-4 py-3 rounded-xl"
-                  style={{ fontSize: '0.88rem' }}
-                />
-              </div>
-
-              {/* Password field */}
-              <div>
-                <label className="font-mono" style={{ display: 'block', fontSize: '0.62rem',
-                  color: focused === 'pass' ? 'var(--accent-cyan)' : 'var(--text-tertiary)',
-                  textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8,
-                  transition: 'color 0.2s' }}>
-                  Password
-                </label>
-                <div className="relative">
-                  <input
-                    type={showPass ? 'text' : 'password'} value={password}
-                    onChange={e => setPassword(e.target.value)}
-                    onFocus={() => setFocused('pass')} onBlur={() => setFocused(null)}
-                    placeholder="••••••••••" required
-                    className="input-field w-full px-4 py-3 rounded-xl pr-12"
-                    style={{ fontSize: '0.88rem' }}
-                  />
-                  <button type="button" onClick={() => setShowPass(!showPass)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 transition-colors"
-                    style={{ background: 'none', border: 'none', cursor: 'pointer',
-                      color: 'var(--text-tertiary)', fontSize: '0.8rem', padding: '4px' }}>
-                    {showPass ? '◉' : '◎'}
-                  </button>
-                </div>
-              </div>
-
-              {/* Error */}
-              {error && (
-                <div className="rounded-xl px-4 py-3 flex items-center gap-3"
-                  style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)' }}>
-                  <span style={{ color: '#ef4444', fontSize: '1rem' }}>✕</span>
-                  <span style={{ fontSize: '0.8rem', color: '#f87171' }}>{error}</span>
-                </div>
-              )}
-
-              {/* Submit */}
-              <button type="submit" disabled={loading}
-                className="btn-primary w-full py-3.5 rounded-xl cursor-pointer mt-1"
-                style={{ fontSize: '0.9rem', fontFamily: 'Geist,sans-serif', letterSpacing: '-0.01em',
-                  opacity: loading ? 0.7 : 1 }}>
-                {loading ? (
-                  <span className="flex items-center justify-center gap-3">
-                    <span className="w-4 h-4 rounded-full animate-spin-fast"
-                      style={{ border: '2px solid rgba(0,0,0,0.2)', borderTopColor: 'rgba(0,0,0,0.8)' }} />
-                    Authenticating…
-                  </span>
-                ) : 'Sign In →'}
-              </button>
-            </form>
-
-            <div className="mt-6 pt-5 flex justify-between items-center"
-              style={{ borderTop: '1px solid var(--border-dim)' }}>
-              <a href="/" className="font-mono transition-colors"
-                style={{ fontSize: '0.68rem', color: 'var(--text-tertiary)', textDecoration: 'none' }}>
-                ← Status Page
-              </a>
-              <span className="font-mono" style={{ fontSize: '0.62rem', color: 'var(--text-tertiary)' }}>
-                Secure Session
-              </span>
-            </div>
+            <div style={{ fontWeight: 800, fontSize: '1.35rem', color: 'var(--text)', letterSpacing: '-0.03em', marginBottom: 5 }}>Imarat Group</div>
+            <div className="mono" style={{ fontSize: '0.6rem', color: 'var(--text3)', letterSpacing: '0.14em', textTransform: 'uppercase' }}>Administrator Portal</div>
           </div>
-        </div>
-
-        {/* Below card hint */}
-        <div className="mt-4 text-center font-mono" style={{ fontSize: '0.62rem', color: 'var(--text-tertiary)' }}>
-          Protected by HTTP-only JWT · 8h session
+          <div style={{ height: 1, background: 'linear-gradient(90deg, transparent, var(--gold2), transparent)', marginBottom: 28 }} />
+          <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div>
+              <label className="mono" style={{ display: 'block', fontSize: '0.62rem', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 7 }}>Email Address</label>
+              <input type="email" value={email} onChange={function(e) { setEmail(e.target.value) }} placeholder="admin@imarat.com.pk" required className="inp" style={{ padding: '11px 14px', fontSize: '0.88rem' }} />
+            </div>
+            <div>
+              <label className="mono" style={{ display: 'block', fontSize: '0.62rem', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 7 }}>Password</label>
+              <div style={{ position: 'relative' }}>
+                <input type={showPass ? 'text' : 'password'} value={password} onChange={function(e) { setPassword(e.target.value) }} placeholder="Enter your password" required className="inp" style={{ padding: '11px 42px 11px 14px', fontSize: '0.88rem' }} />
+                <button type="button" onClick={function() { setShowPass(!showPass) }} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', padding: 4, display: 'flex' }}>
+                  <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    {showPass ? <><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></> : <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></>}
+                  </svg>
+                </button>
+              </div>
+            </div>
+            {error && (
+              <div style={{ background: 'var(--red2)', border: '1px solid var(--red3)', borderRadius: 10, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <svg width="14" height="14" fill="none" stroke="var(--red)" strokeWidth="2.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                <span style={{ fontSize: '0.8rem', color: 'var(--red)', fontWeight: 500 }}>{error}</span>
+              </div>
+            )}
+            <button type="submit" disabled={loading} className="btn btn-gold" style={{ padding: '13px', fontSize: '0.9rem', borderRadius: 12, marginTop: 4 }}>
+              {loading ? (
+                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span className="anim-spin" style={{ width: 14, height: 14, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', display: 'inline-block' }} />
+                  Signing in...
+                </span>
+              ) : 'Sign In to Admin Panel'}
+            </button>
+          </form>
+          <div style={{ marginTop: 24, paddingTop: 20, borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <a href="/" className="mono" style={{ fontSize: '0.68rem', color: 'var(--text3)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 5 }}>
+              <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+              Back to Status Page
+            </a>
+            <span className="mono" style={{ fontSize: '0.6rem', color: 'var(--text4)' }}>Secure Session</span>
+          </div>
         </div>
       </div>
     </div>
