@@ -1,54 +1,51 @@
 'use client'
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef, useId } from 'react'
 import type { Site } from '@/lib/store'
 
-/* ─── Sparkline ──────────────────────────────────────────────────── */
 function Sparkline({ data, status }: { data: number[]; status: string }) {
+  const uid = useId()
   const W = 110, H = 28
   const vals = (data || []).slice(-40)
   if (vals.length < 2) return <div style={{ width: W, height: H }} />
   const max = Math.max(...vals.filter(v => v > 0), 1)
   const color = status === 'online' ? '#10b981' : status === 'degraded' ? '#f59e0b' : '#ef4444'
   const pts = vals.map((v, i) => `${(i / (vals.length - 1)) * W},${H - (v / max) * (H - 4) - 2}`).join(' ')
-  const id = `sg-${status}-${Math.random().toString(36).slice(2,6)}`
+  const gradId = `sg-${uid}-${status}`.replace(/:/g, '')
   return (
     <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`}>
       <defs>
-        <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
+        <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor={color} stopOpacity="0.25" />
           <stop offset="100%" stopColor={color} stopOpacity="0" />
         </linearGradient>
       </defs>
-      <polygon points={`0,${H} ${pts} ${W},${H}`} fill={`url(#${id})`} />
+      <polygon points={`0,${H} ${pts} ${W},${H}`} fill={`url(#${gradId})`} />
       <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
     </svg>
   )
 }
 
-/* ─── Status dot with pulse ──────────────────────────────────────── */
 function StatusDot({ status, size = 8 }: { status: string; size?: number }) {
-  const colors: Record<string, string> = { online: '#10b981', degraded: '#f59e0b', down: '#ef4444' }
-  const c = colors[status] ?? '#64748b'
+  const c: Record<string, string> = { online: '#10b981', degraded: '#f59e0b', down: '#ef4444' }
+  const col = c[status] ?? '#64748b'
   return (
-    <span className="relative inline-flex items-center justify-center" style={{ width: size, height: size }}>
+    <span className="relative inline-flex items-center justify-center flex-shrink-0" style={{ width: size, height: size }}>
       {status !== 'down' && (
         <span className="absolute rounded-full animate-ping"
-          style={{ width: size * 2, height: size * 2, background: c, opacity: 0.2, animationDuration: '2s' }} />
+          style={{ width: size * 2.2, height: size * 2.2, background: col, opacity: 0.18, animationDuration: '2s' }} />
       )}
-      <span className="relative rounded-full" style={{ width: size, height: size, background: c,
-        boxShadow: `0 0 ${size * 1.5}px ${c}` }} />
+      <span className="relative rounded-full" style={{ width: size, height: size, background: col, boxShadow: `0 0 ${size * 1.5}px ${col}88` }} />
     </span>
   )
 }
 
-/* ─── Status badge ───────────────────────────────────────────────── */
 function StatusBadge({ status }: { status: string }) {
-  const map: Record<string, { label: string; cls: string }> = {
+  const m: Record<string, { label: string; cls: string }> = {
     online:   { label: 'Online',   cls: 'badge-online' },
     degraded: { label: 'Degraded', cls: 'badge-degraded' },
     down:     { label: 'Down',     cls: 'badge-down' },
   }
-  const s = map[status] ?? map.online
+  const s = m[status] ?? m.online
   return (
     <span className={`${s.cls} inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md font-mono`}
       style={{ fontSize: '0.68rem', fontWeight: 600, letterSpacing: '0.04em' }}>
@@ -58,432 +55,368 @@ function StatusBadge({ status }: { status: string }) {
   )
 }
 
-/* ─── Uptime blocks ──────────────────────────────────────────────── */
 function UptimeBlocks({ uptime, status }: { uptime: number; status: string }) {
   const total = 30
   const on = Math.round((uptime / 100) * total)
   return (
-    <div className="flex gap-[2px] items-end h-5">
+    <div className="flex gap-[2px] items-end" style={{ height: 18 }}>
       {Array.from({ length: total }).map((_, i) => {
         const isOn = i < on
-        const bg = !isOn ? 'rgba(239,68,68,0.5)'
-          : status === 'degraded' && i === on - 1 ? 'rgba(245,158,11,0.7)'
-          : 'rgba(16,185,129,0.65)'
-        return (
-          <div key={i} className="uptime-segment flex-1 rounded-sm"
-            style={{ height: `${60 + Math.sin(i * 0.7) * 25}%`, background: bg }} />
-        )
+        const bg = !isOn
+          ? 'rgba(239,68,68,0.45)'
+          : status === 'degraded' && i >= on - 3
+          ? 'rgba(245,158,11,0.65)'
+          : 'rgba(16,185,129,0.6)'
+        const heights = [60,72,58,80,65,75,55,70,62,78,68,72,60,74,58,80,66,70,62,76,64,72,58,78,68,74,60,76,62,70]
+        const h = heights[i] ?? 65
+        return <div key={i} className="uptime-segment flex-1 rounded-sm" style={{ height: `${h}%`, background: bg }} />
       })}
     </div>
   )
 }
 
-/* ─── Uptime chart (macro) ───────────────────────────────────────── */
-function MacroUptimeChart({ sites }: { sites: Site[] }) {
-  const bars = Array.from({ length: 48 }, (_, i) => {
-    const on = sites.filter(s => s.status === 'online').length
-    const base = sites.length ? on / sites.length : 1
-    return Math.max(0.6, Math.min(1, base + (Math.random() - 0.5) * 0.06))
-  })
+function MacroChart({ sites }: { sites: Site[] }) {
+  const barHeights = [82,90,78,95,88,92,75,98,85,91,79,94,87,93,76,99,83,89,77,96,86,90,80,97,84,92,78,95,83,91,77,98,85,89,79,94,88,93,76,100,82,90,78,95,87,91,75,98]
   const avg = sites.length ? sites.reduce((a, s) => a + s.uptime24h, 0) / sites.length : 100
-  const timeLabels = ['12AM', '3AM', '6AM', '9AM', '12PM', '3PM', '6PM', '9PM', 'Now']
-
+  const onlineRatio = sites.length ? sites.filter(s => s.status === 'online').length / sites.length : 1
+  const times = ['12 AM', '3 AM', '6 AM', '9 AM', '12 PM', '3 PM', '6 PM', '9 PM', 'Now']
   return (
-    <div className="glass rounded-xl p-5 scan-effect" style={{ border: '1px solid var(--border-dim)' }}>
+    <div className="glass rounded-xl p-5 scan-effect">
       <div className="flex items-start justify-between mb-5">
         <div>
-          <p className="font-mono mb-1" style={{ fontSize: '0.65rem', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.12em' }}>
+          <p className="font-mono mb-2" style={{ fontSize: '0.62rem', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.12em' }}>
             Overall Uptime — Last 24 Hours
           </p>
-          <div className="flex items-baseline gap-2">
-            <span style={{ fontFamily: 'Geist,sans-serif', fontSize: '2.4rem', fontWeight: 800,
+          <div className="flex items-baseline gap-3">
+            <span style={{ fontFamily: 'Geist,sans-serif', fontSize: '2.6rem', fontWeight: 800,
               color: avg >= 99 ? '#10b981' : avg >= 90 ? '#f59e0b' : '#ef4444',
               letterSpacing: '-0.04em', lineHeight: 1 }}>
               {avg.toFixed(2)}%
             </span>
-            <span className="font-mono" style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)' }}>
-              {sites.filter(s => s.status === 'online').length}/{sites.length} sites nominal
+            <span className="font-mono" style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)' }}>
+              {sites.filter(s => s.status === 'online').length}/{sites.length} nominal
             </span>
           </div>
         </div>
-        <div className="flex gap-4" style={{ fontSize: '0.63rem', color: 'var(--text-tertiary)' }}>
-          {[
-            { label: 'Operational', color: '#10b981' },
-            { label: 'Degraded', color: '#f59e0b' },
-            { label: 'Outage', color: '#ef4444' },
-          ].map(l => (
-            <div key={l.label} className="flex items-center gap-1.5">
-              <div className="w-2 h-2 rounded-sm" style={{ background: l.color }} />
-              {l.label}
+        <div className="flex gap-4 mt-1">
+          {[['#10b981', 'Operational'], ['#f59e0b', 'Degraded'], ['#ef4444', 'Outage']].map(([c, l]) => (
+            <div key={l} className="flex items-center gap-1.5 font-mono" style={{ fontSize: '0.62rem', color: 'var(--text-tertiary)' }}>
+              <div className="w-2 h-2 rounded-sm" style={{ background: c }} />{l}
             </div>
           ))}
         </div>
       </div>
-      <div className="flex items-end gap-[2px]" style={{ height: '52px' }}>
-        {bars.map((v, i) => {
-          const h = Math.round(v * 52)
-          const color = v > 0.98 ? 'rgba(16,185,129,0.7)' : v > 0.9 ? 'rgba(245,158,11,0.65)' : 'rgba(239,68,68,0.65)'
-          return <div key={i} className="flex-1 rounded-sm" style={{ height: h, background: color }} />
+      <div className="flex items-end gap-[2px]" style={{ height: 52 }}>
+        {barHeights.map((h, i) => {
+          const v = onlineRatio * (h / 100)
+          const col = v > 0.95 ? 'rgba(16,185,129,0.7)' : v > 0.8 ? 'rgba(245,158,11,0.65)' : 'rgba(239,68,68,0.6)'
+          return <div key={i} className="flex-1 rounded-sm" style={{ height: Math.round(v * 52) || 4, background: col }} />
         })}
       </div>
       <div className="flex justify-between mt-2">
-        {timeLabels.map(t => (
-          <span key={t} className="font-mono" style={{ fontSize: '0.6rem', color: 'var(--text-tertiary)' }}>{t}</span>
-        ))}
+        {times.map(t => <span key={t} className="font-mono" style={{ fontSize: '0.58rem', color: 'var(--text-tertiary)' }}>{t}</span>)}
       </div>
     </div>
   )
 }
 
-/* ─── Loading screen ─────────────────────────────────────────────── */
 function BootScreen({ onDone }: { onDone: () => void }) {
   const [progress, setProgress] = useState(0)
   const [lines, setLines] = useState<string[]>([])
-  const [phase, setPhase] = useState(0)
+  const doneRef = useRef(onDone)
+  doneRef.current = onDone
 
-  const bootLines = [
-    '[ OK ] Imarat Group Network Management System v2.1',
-    '[ OK ] Initializing monitoring subsystems...',
-    '[ OK ] Loading cryptographic certificates...',
-    '[ OK ] Establishing secure channels to 29 nodes...',
-    '[ .. ] Polling ICMP endpoints...',
-    '[ OK ] Telemetry pipeline connected',
-    '[ OK ] Rendering dashboard — standby',
+  const LINES = [
+    '[ SYS ] Imarat Group Network Operations Center v2.1',
+    '[ OK  ] Kernel modules loaded successfully',
+    '[ OK  ] Cryptographic certificates verified',
+    '[ OK  ] Establishing secure channel to 29 nodes...',
+    '[ OK  ] ICMP telemetry pipeline active',
+    '[ OK  ] Real-time monitoring engine started',
+    '[ OK  ] Dashboard render complete — welcome',
   ]
 
   useEffect(() => {
-    let line = 0
+    let i = 0
     const iv = setInterval(() => {
-      if (line < bootLines.length) {
-        setLines(prev => [...prev, bootLines[line]])
-        setProgress(Math.round(((line + 1) / bootLines.length) * 100))
-        line++
+      if (i < LINES.length) {
+        setLines(p => [...p, LINES[i]])
+        setProgress(Math.round(((i + 1) / LINES.length) * 100))
+        i++
       } else {
         clearInterval(iv)
-        setTimeout(onDone, 400)
+        setTimeout(() => doneRef.current(), 500)
       }
-    }, 250)
+    }, 260)
     return () => clearInterval(iv)
-  }, [onDone])
+  }, [])
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center"
-      style={{ background: 'var(--bg-base)' }}>
-      <div className="absolute inset-0 dot-grid opacity-60" />
-      {/* Ambient glow */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none"
-        style={{ width: 600, height: 600,
-          background: 'radial-gradient(circle, rgba(0,212,255,0.06) 0%, rgba(0,255,136,0.03) 40%, transparent 70%)',
-          filter: 'blur(40px)' }} />
-
+    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center dot-grid" style={{ background: 'var(--bg-base)' }}>
+      <div className="absolute inset-0 pointer-events-none" style={{
+        background: 'radial-gradient(ellipse 60% 50% at 50% 50%, rgba(0,212,255,0.05) 0%, transparent 70%)' }} />
       <div className="relative z-10 w-full max-w-lg px-8 animate-fadeIn">
-        {/* Logo */}
         <div className="flex items-center gap-4 mb-10">
-          <div className="relative w-14 h-14 rounded-xl flex items-center justify-center animate-breathe"
-            style={{ background: 'linear-gradient(135deg,rgba(0,212,255,0.15),rgba(0,255,136,0.08))',
-              border: '1px solid rgba(0,212,255,0.3)', boxShadow: '0 0 30px rgba(0,212,255,0.12)' }}>
-            <span style={{ fontFamily: 'Geist,sans-serif', fontWeight: 900, fontSize: '1.3rem', color: 'var(--accent-cyan)' }}>IG</span>
+          <div className="w-16 h-16 rounded-2xl flex items-center justify-center animate-breathe"
+            style={{ background: 'linear-gradient(135deg,rgba(0,212,255,0.12),rgba(0,255,136,0.06))',
+              border: '1px solid rgba(0,212,255,0.3)', boxShadow: '0 0 40px rgba(0,212,255,0.15)' }}>
+            <span style={{ fontFamily: 'Geist,sans-serif', fontWeight: 900, fontSize: '1.5rem', color: 'var(--accent-cyan)' }}>IG</span>
           </div>
           <div>
-            <div style={{ fontFamily: 'Geist,sans-serif', fontWeight: 800, fontSize: '1.4rem', letterSpacing: '-0.03em', color: 'var(--text-primary)' }}>
+            <div style={{ fontFamily: 'Geist,sans-serif', fontWeight: 800, fontSize: '1.5rem', letterSpacing: '-0.03em', color: '#fff', lineHeight: 1 }}>
               Imarat Group
             </div>
-            <div className="font-mono" style={{ fontSize: '0.65rem', color: 'var(--accent-cyan)', opacity: 0.7, letterSpacing: '0.15em', textTransform: 'uppercase' }}>
+            <div className="font-mono mt-1" style={{ fontSize: '0.62rem', color: 'var(--accent-cyan)', opacity: 0.65, letterSpacing: '0.15em', textTransform: 'uppercase' }}>
               Network Operations Center
             </div>
           </div>
         </div>
-
-        {/* Boot log */}
-        <div className="mb-6 rounded-lg p-4" style={{ background: 'rgba(0,212,255,0.03)', border: '1px solid rgba(0,212,255,0.1)', minHeight: 160 }}>
+        <div className="mb-6 rounded-xl p-4" style={{ background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(0,212,255,0.1)', minHeight: 168 }}>
           {lines.map((l, i) => (
-            <div key={i} className="boot-line font-mono" style={{ fontSize: '0.68rem', lineHeight: '1.8',
-              color: l.startsWith('[ OK ]') ? 'rgba(0,255,136,0.7)' : 'rgba(0,212,255,0.5)',
-              animationDelay: `${i * 0}ms` }}>
+            <div key={i} className="boot-line font-mono" style={{ fontSize: '0.67rem', lineHeight: 1.9,
+              color: l.startsWith('[ OK') ? 'rgba(0,255,136,0.7)' : l.startsWith('[ SYS') ? 'rgba(0,212,255,0.8)' : 'rgba(0,212,255,0.45)' }}>
               {l}
             </div>
           ))}
-          {lines.length < bootLines.length && (
-            <span className="font-mono animate-pulse" style={{ fontSize: '0.68rem', color: 'rgba(0,212,255,0.4)' }}>█</span>
+          {lines.length < LINES.length && (
+            <span className="font-mono animate-pulse" style={{ fontSize: '0.67rem', color: 'rgba(0,212,255,0.4)' }}>█</span>
           )}
         </div>
-
-        {/* Progress bar */}
-        <div className="mb-3 h-[3px] rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)' }}>
+        <div className="h-[2px] rounded-full overflow-hidden mb-3" style={{ background: 'rgba(255,255,255,0.06)' }}>
           <div className="h-full rounded-full transition-all duration-300"
             style={{ width: `${progress}%`, background: 'linear-gradient(90deg,#00d4ff,#00ff88)' }} />
         </div>
-        <div className="flex justify-between">
-          <span className="font-mono" style={{ fontSize: '0.62rem', color: 'var(--text-tertiary)' }}>BOOT SEQUENCE</span>
-          <span className="font-mono" style={{ fontSize: '0.62rem', color: 'var(--accent-cyan)', opacity: 0.7 }}>{progress}%</span>
+        <div className="flex justify-between font-mono" style={{ fontSize: '0.6rem', color: 'var(--text-tertiary)' }}>
+          <span>BOOT SEQUENCE</span>
+          <span style={{ color: 'var(--accent-cyan)', opacity: 0.7 }}>{progress}%</span>
         </div>
       </div>
     </div>
   )
 }
 
-/* ─── Live clock ─────────────────────────────────────────────────── */
 function LiveClock() {
-  const [now, setNow] = useState(new Date())
-  useEffect(() => { const iv = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(iv) }, [])
-  const pad = (n: number) => String(n).padStart(2, '0')
-  const h = pad(now.getHours()), m = pad(now.getMinutes()), s = pad(now.getSeconds())
-  const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
-  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
-  const dateStr = `${days[now.getDay()]}, ${now.getDate()} ${months[now.getMonth()]} ${now.getFullYear()}`
+  const [now, setNow] = useState<Date | null>(null)
+  useEffect(() => {
+    setNow(new Date())
+    const iv = setInterval(() => setNow(new Date()), 1000)
+    return () => clearInterval(iv)
+  }, [])
+  if (!now) return <div style={{ width: 140, height: 36 }} />
+  const p = (n: number) => String(n).padStart(2, '0')
+  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
   return (
     <div className="text-right">
-      <div className="font-mono" style={{ fontSize: '1.05rem', letterSpacing: '0.06em', color: 'var(--text-primary)', lineHeight: 1 }}>
-        {h}<span style={{ color: 'var(--accent-cyan)', opacity: 0.7 }}>:</span>
-        {m}<span style={{ color: 'var(--accent-cyan)', opacity: 0.7 }}>:</span>
-        <span style={{ color: 'var(--text-secondary)'}}>{s}</span>
+      <div className="font-mono" style={{ fontSize: '1.05rem', color: 'var(--text-primary)', letterSpacing: '0.05em', lineHeight: 1 }}>
+        {p(now.getHours())}<span style={{ color: 'var(--accent-cyan)', opacity: 0.6 }}>:</span>
+        {p(now.getMinutes())}<span style={{ color: 'var(--accent-cyan)', opacity: 0.6 }}>:</span>
+        <span style={{ color: 'var(--text-secondary)' }}>{p(now.getSeconds())}</span>
       </div>
-      <div className="font-mono mt-0.5" style={{ fontSize: '0.62rem', color: 'var(--text-tertiary)', letterSpacing: '0.08em' }}>{dateStr}</div>
+      <div className="font-mono mt-0.5" style={{ fontSize: '0.6rem', color: 'var(--text-tertiary)', letterSpacing: '0.06em' }}>
+        {days[now.getDay()]}, {now.getDate()} {months[now.getMonth()]} {now.getFullYear()}
+      </div>
     </div>
   )
 }
 
-/* ─── Main ───────────────────────────────────────────────────────── */
 export default function StatusPage() {
   const [sites, setSites] = useState<Site[]>([])
   const [booted, setBooted] = useState(false)
   const [showBoot, setShowBoot] = useState(true)
-  const [lastUpdated, setLastUpdated] = useState(new Date())
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [showAll, setShowAll] = useState(false)
-  const [expandedSite, setExpandedSite] = useState<string | null>(null)
-  const timerRef = useRef<NodeJS.Timeout | null>(null)
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const fetchSites = useCallback(async () => {
     try {
       const r = await fetch('/api/sites', { cache: 'no-store' })
-      if (r.ok) { setSites(await r.json()); setLastUpdated(new Date()) }
-    } catch {}
+      if (r.ok) {
+        setSites(await r.json())
+        setLastUpdated(new Date())
+      }
+    } catch { /* silent */ }
   }, [])
 
-  const handleBootDone = useCallback(async () => {
-    await fetchSites()
-    setBooted(true)
-    setTimeout(() => setShowBoot(false), 500)
-    timerRef.current = setInterval(fetchSites, 5000)
+  const handleBootDone = useCallback(() => {
+    fetchSites().then(() => {
+      setBooted(true)
+      setTimeout(() => setShowBoot(false), 500)
+      timerRef.current = setInterval(fetchSites, 5000)
+    })
   }, [fetchSites])
 
-  useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current) }, [])
+  useEffect(() => {
+    return () => { if (timerRef.current) clearInterval(timerRef.current) }
+  }, [])
 
   const online = sites.filter(s => s.status === 'online').length
   const degraded = sites.filter(s => s.status === 'degraded').length
   const down = sites.filter(s => s.status === 'down').length
   const allOK = degraded === 0 && down === 0
-
   const displaySites = showAll ? sites : sites.slice(0, 10)
 
   return (
     <>
       {showBoot && (
-        <div style={{ opacity: booted ? 0 : 1, transition: 'opacity 0.5s ease',
-          pointerEvents: booted ? 'none' : 'auto', position: 'fixed', inset: 0, zIndex: 50 }}>
+        <div style={{ opacity: booted ? 0 : 1, transition: 'opacity 0.5s ease', pointerEvents: booted ? 'none' : 'auto', position: 'fixed', inset: 0, zIndex: 50 }}>
           <BootScreen onDone={handleBootDone} />
         </div>
       )}
 
       <div style={{ opacity: booted ? 1 : 0, transition: 'opacity 0.6s ease 0.1s', minHeight: '100vh' }}>
-        {/* Top rainbow accent */}
         <div className="top-accent fixed top-0 left-0 right-0 z-20" style={{ height: 2 }} />
 
-        {/* Header */}
         <header className="sticky top-0 z-10"
-          style={{ background: 'rgba(6,9,16,0.85)', backdropFilter: 'blur(24px)',
-            borderBottom: '1px solid var(--border-dim)' }}>
+          style={{ background: 'rgba(6,9,16,0.88)', backdropFilter: 'blur(24px)', borderBottom: '1px solid var(--border-dim)' }}>
           <div className="max-w-[1400px] mx-auto px-6 h-16 flex items-center justify-between gap-6">
-            {/* Brand */}
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-                style={{ background: 'linear-gradient(135deg,rgba(0,212,255,0.15),rgba(0,255,136,0.08))',
-                  border: '1px solid rgba(0,212,255,0.25)' }}>
-                <span style={{ fontFamily: 'Geist,sans-serif', fontWeight: 900, fontSize: '0.85rem', color: 'var(--accent-cyan)' }}>IG</span>
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center"
+                style={{ background: 'linear-gradient(135deg,rgba(0,212,255,0.12),rgba(0,255,136,0.06))', border: '1px solid rgba(0,212,255,0.22)' }}>
+                <span style={{ fontFamily: 'Geist,sans-serif', fontWeight: 900, fontSize: '0.82rem', color: 'var(--accent-cyan)' }}>IG</span>
               </div>
               <div>
                 <div style={{ fontFamily: 'Geist,sans-serif', fontWeight: 700, fontSize: '0.95rem', letterSpacing: '-0.02em', lineHeight: 1 }}>
                   Imarat Group
                 </div>
-                <div className="font-mono" style={{ fontSize: '0.58rem', color: 'var(--text-tertiary)', letterSpacing: '0.1em', textTransform: 'uppercase', marginTop: 2 }}>
+                <div className="font-mono" style={{ fontSize: '0.56rem', color: 'var(--text-tertiary)', letterSpacing: '0.1em', textTransform: 'uppercase', marginTop: 2 }}>
                   Network Operations Center
                 </div>
               </div>
             </div>
 
-            {/* Center — system health pill */}
-            <div className="hidden md:flex items-center gap-2 px-4 py-2 rounded-full"
-              style={{ background: allOK ? 'rgba(16,185,129,0.08)' : 'rgba(245,158,11,0.08)',
-                border: `1px solid ${allOK ? 'rgba(16,185,129,0.2)' : 'rgba(245,158,11,0.2)'}` }}>
+            <div className="hidden md:flex items-center gap-2.5 px-4 py-1.5 rounded-full"
+              style={{ background: allOK ? 'rgba(16,185,129,0.07)' : 'rgba(245,158,11,0.07)', border: `1px solid ${allOK ? 'rgba(16,185,129,0.18)' : 'rgba(245,158,11,0.18)'}` }}>
               <StatusDot status={allOK ? 'online' : 'degraded'} size={7} />
               <span style={{ fontSize: '0.78rem', fontWeight: 600, color: allOK ? '#34d399' : '#fbbf24' }}>
                 {allOK ? 'All Systems Operational' : `${degraded + down} site${degraded + down !== 1 ? 's' : ''} need attention`}
               </span>
             </div>
 
-            {/* Right */}
             <div className="flex items-center gap-5">
-              <div className="hidden sm:flex items-center gap-2" style={{ fontSize: '0.68rem', color: 'var(--text-tertiary)' }}>
-                <div className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: 'var(--accent-cyan)' }} />
-                <span className="font-mono">Updated {lastUpdated.toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
-              </div>
+              {lastUpdated && (
+                <div className="hidden sm:flex items-center gap-2">
+                  <div className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: 'var(--accent-cyan)' }} />
+                  <span className="font-mono" style={{ fontSize: '0.66rem', color: 'var(--text-tertiary)' }}>
+                    {lastUpdated.toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                  </span>
+                </div>
+              )}
               <LiveClock />
             </div>
           </div>
         </header>
 
         <main className="max-w-[1400px] mx-auto px-6 py-8">
-
-          {/* Stat cards */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-7 animate-fadeUp">
             {[
-              { label: 'Online', value: online, color: '#10b981', glow: 'stat-glow-green',
-                bg: 'rgba(16,185,129,0.06)', border: 'rgba(16,185,129,0.15)', icon: '↑', sub: 'nominal' },
-              { label: 'Degraded', value: degraded, color: '#f59e0b', glow: 'stat-glow-amber',
-                bg: 'rgba(245,158,11,0.06)', border: 'rgba(245,158,11,0.15)', icon: '~', sub: 'high latency' },
-              { label: 'Down', value: down, color: '#ef4444', glow: 'stat-glow-red',
-                bg: 'rgba(239,68,68,0.06)', border: 'rgba(239,68,68,0.15)', icon: '↓', sub: 'unreachable' },
-              { label: 'Total Sites', value: sites.length, color: 'var(--accent-cyan)', glow: 'stat-glow-cyan',
-                bg: 'rgba(0,212,255,0.04)', border: 'rgba(0,212,255,0.12)', icon: '#', sub: 'monitored' },
+              { label: 'Online',      value: online,       color: '#10b981', glow: 'stat-glow-green', bg: 'rgba(16,185,129,0.06)', border: 'rgba(16,185,129,0.14)', icon: '↑', sub: 'nominal' },
+              { label: 'Degraded',    value: degraded,     color: '#f59e0b', glow: 'stat-glow-amber', bg: 'rgba(245,158,11,0.06)', border: 'rgba(245,158,11,0.14)', icon: '~', sub: 'high latency' },
+              { label: 'Down',        value: down,         color: '#ef4444', glow: 'stat-glow-red',   bg: 'rgba(239,68,68,0.06)',  border: 'rgba(239,68,68,0.14)',  icon: '↓', sub: 'unreachable' },
+              { label: 'Total Sites', value: sites.length, color: '#00d4ff', glow: 'stat-glow-cyan',  bg: 'rgba(0,212,255,0.04)',  border: 'rgba(0,212,255,0.12)',  icon: '#', sub: 'monitored' },
             ].map((c, i) => (
               <div key={c.label} className={`rounded-xl p-5 ${c.glow} row-enter`}
                 style={{ background: c.bg, border: `1px solid ${c.border}`, animationDelay: `${i * 60}ms` }}>
-                <div className="flex items-start justify-between mb-3">
-                  <span style={{ fontSize: '0.65rem', fontWeight: 600, color: 'var(--text-tertiary)',
-                    textTransform: 'uppercase', letterSpacing: '0.1em' }}>{c.label}</span>
-                  <span className="font-mono w-7 h-7 rounded-lg flex items-center justify-center"
-                    style={{ fontSize: '0.8rem', background: `${c.border}`, color: c.color }}>{c.icon}</span>
+                <div className="flex items-center justify-between mb-3">
+                  <span style={{ fontSize: '0.63rem', fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{c.label}</span>
+                  <span className="font-mono w-7 h-7 rounded-lg flex items-center justify-center" style={{ fontSize: '0.82rem', background: c.border, color: c.color }}>{c.icon}</span>
                 </div>
-                <div style={{ fontFamily: 'Geist,sans-serif', fontSize: '2.5rem', fontWeight: 800,
-                  color: c.color, letterSpacing: '-0.04em', lineHeight: 1 }}>{c.value}</div>
-                <div className="font-mono mt-1" style={{ fontSize: '0.62rem', color: 'var(--text-tertiary)' }}>{c.sub}</div>
+                <div style={{ fontFamily: 'Geist,sans-serif', fontSize: '2.6rem', fontWeight: 800, color: c.color, letterSpacing: '-0.04em', lineHeight: 1 }}>{c.value}</div>
+                <div className="font-mono mt-1" style={{ fontSize: '0.6rem', color: 'var(--text-tertiary)' }}>{c.sub}</div>
               </div>
             ))}
           </div>
 
-          {/* Layout: sidebar + right panel */}
           <div className="flex gap-5 flex-col xl:flex-row items-start">
-
-            {/* Left sidebar */}
-            <div className="xl:w-72 flex-shrink-0 w-full animate-fadeUp" style={{ animationDelay: '120ms' }}>
+            <div className="xl:w-72 flex-shrink-0 w-full animate-fadeUp" style={{ animationDelay: '100ms' }}>
               <div className="glass rounded-xl overflow-hidden">
-                <div className="px-4 py-3 flex items-center justify-between"
-                  style={{ borderBottom: '1px solid var(--border-dim)' }}>
-                  <span style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-tertiary)',
-                    textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border-dim)' }}>
+                  <span style={{ fontSize: '0.63rem', fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
                     {sites.length} Facilities
                   </span>
                   <div className="flex gap-1">
-                    {[
-                      { color: '#10b981', count: online },
-                      { color: '#f59e0b', count: degraded },
-                      { color: '#ef4444', count: down },
-                    ].map((s, i) => s.count > 0 && (
-                      <span key={i} className="font-mono px-1.5 py-0.5 rounded text-white"
-                        style={{ fontSize: '0.58rem', background: `${s.color}22`, color: s.color, border: `1px solid ${s.color}33` }}>
-                        {s.count}
-                      </span>
-                    ))}
+                    {([[online, '#10b981'], [degraded, '#f59e0b'], [down, '#ef4444']] as [number, string][]).map(([cnt, col], i) =>
+                      cnt > 0 && (
+                        <span key={i} className="font-mono px-1.5 py-0.5 rounded"
+                          style={{ fontSize: '0.58rem', background: `${col}18`, color: col, border: `1px solid ${col}33` }}>
+                          {cnt}
+                        </span>
+                      )
+                    )}
                   </div>
                 </div>
-
                 <div>
                   {displaySites.map((site, idx) => (
-                    <div key={site.id}
-                      className="table-row px-4 py-2.5 flex items-center justify-between gap-2 cursor-pointer"
-                      onClick={() => setExpandedSite(expandedSite === site.id ? null : site.id)}
-                      style={{ animationDelay: `${idx * 20}ms` }}>
+                    <div key={site.id} className="table-row px-4 py-2.5 flex items-center justify-between gap-2"
+                      style={{ animationDelay: `${idx * 18}ms` }}>
                       <div className="flex items-center gap-2.5 min-w-0">
                         <StatusDot status={site.status} size={6} />
-                        <span style={{ fontSize: '0.78rem', color: 'rgba(255,255,255,0.8)',
-                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <span style={{ fontSize: '0.77rem', color: 'rgba(255,255,255,0.82)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {site.name}
                         </span>
                       </div>
                       <span className="font-mono flex-shrink-0"
-                        style={{ fontSize: '0.68rem',
-                          color: site.status === 'down' ? '#ef4444' : site.status === 'degraded' ? '#f59e0b' : 'var(--text-tertiary)' }}>
+                        style={{ fontSize: '0.68rem', color: site.status === 'down' ? '#ef4444' : site.status === 'degraded' ? '#f59e0b' : 'var(--text-tertiary)' }}>
                         {site.status === 'down' ? 'DOWN' : site.pingMs ? `${site.pingMs}ms` : '—'}
                       </span>
                     </div>
                   ))}
                 </div>
-
                 {sites.length > 10 && (
-                  <button onClick={() => setShowAll(!showAll)}
-                    className="w-full py-3 text-center transition-all"
-                    style={{ borderTop: '1px solid var(--border-dim)', background: 'transparent',
-                      fontSize: '0.72rem', color: 'var(--accent-cyan)', opacity: 0.7, cursor: 'pointer',
-                      fontFamily: 'JetBrains Mono, monospace' }}>
+                  <button onClick={() => setShowAll(!showAll)} className="w-full py-3 font-mono"
+                    style={{ borderTop: '1px solid var(--border-dim)', background: 'transparent', fontSize: '0.7rem', color: 'var(--accent-cyan)', opacity: 0.7, cursor: 'pointer' }}>
                     {showAll ? '↑ Show less' : `↓ View all ${sites.length} facilities`}
                   </button>
                 )}
               </div>
             </div>
 
-            {/* Right panel */}
             <div className="flex-1 min-w-0 w-full flex flex-col gap-5">
-              {/* Uptime chart */}
-              <div className="animate-fadeUp" style={{ animationDelay: '80ms' }}>
-                <MacroUptimeChart sites={sites} />
+              <div className="animate-fadeUp" style={{ animationDelay: '70ms' }}>
+                <MacroChart sites={sites} />
               </div>
 
-              {/* Main table */}
-              <div className="glass rounded-xl overflow-hidden animate-fadeUp" style={{ animationDelay: '140ms' }}>
-                <div className="px-5 py-4 flex items-center justify-between"
-                  style={{ borderBottom: '1px solid var(--border-dim)' }}>
+              <div className="glass rounded-xl overflow-hidden animate-fadeUp" style={{ animationDelay: '130ms' }}>
+                <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border-dim)' }}>
                   <div>
                     <h2 style={{ fontFamily: 'Geist,sans-serif', fontSize: '0.9rem', fontWeight: 700 }}>
                       Facility Status &amp; Live Monitoring
                     </h2>
-                    <p className="font-mono mt-0.5" style={{ fontSize: '0.62rem', color: 'var(--text-tertiary)' }}>
-                      Real-time ping and uptime data — refreshes every 5s
+                    <p className="font-mono mt-0.5" style={{ fontSize: '0.6rem', color: 'var(--text-tertiary)' }}>
+                      Real-time ping and uptime — auto-refreshes every 5s
                     </p>
                   </div>
                   <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg"
                     style={{ background: 'rgba(0,212,255,0.06)', border: '1px solid rgba(0,212,255,0.15)' }}>
                     <div className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: 'var(--accent-cyan)' }} />
-                    <span className="font-mono" style={{ fontSize: '0.62rem', color: 'var(--accent-cyan)', opacity: 0.8 }}>LIVE</span>
+                    <span className="font-mono" style={{ fontSize: '0.6rem', color: 'var(--accent-cyan)', opacity: 0.8 }}>LIVE</span>
                   </div>
                 </div>
 
-                {/* Table head */}
-                <div className="grid px-5 py-3 items-center"
-                  style={{ gridTemplateColumns: '1.8fr 110px 120px 100px 130px',
-                    borderBottom: '1px solid var(--border-dim)',
-                    background: 'rgba(255,255,255,0.015)' }}>
+                <div className="grid px-5 py-2.5"
+                  style={{ gridTemplateColumns: '1.8fr 110px 115px 100px 130px', borderBottom: '1px solid var(--border-dim)', background: 'rgba(255,255,255,0.012)' }}>
                   {['Facility', 'Status', 'Response', '24H Uptime', 'Live Graph'].map(h => (
-                    <div key={h} className="font-mono"
-                      style={{ fontSize: '0.6rem', fontWeight: 600, color: 'var(--text-tertiary)',
-                        textTransform: 'uppercase', letterSpacing: '0.1em' }}>{h}</div>
+                    <div key={h} className="font-mono" style={{ fontSize: '0.58rem', fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{h}</div>
                   ))}
                 </div>
 
-                {/* Rows */}
                 {sites.map((site, idx) => (
                   <div key={site.id} className="table-row row-enter grid px-5 items-center"
-                    style={{ gridTemplateColumns: '1.8fr 110px 120px 100px 130px',
-                      paddingTop: 12, paddingBottom: 12, animationDelay: `${idx * 25}ms` }}>
+                    style={{ gridTemplateColumns: '1.8fr 110px 115px 100px 130px', paddingTop: 11, paddingBottom: 11, animationDelay: `${idx * 22}ms` }}>
                     <div>
-                      <div style={{ fontSize: '0.82rem', fontWeight: 500, color: 'rgba(255,255,255,0.88)' }}>
-                        {site.name}
-                      </div>
+                      <div style={{ fontSize: '0.82rem', fontWeight: 500, color: 'rgba(255,255,255,0.88)' }}>{site.name}</div>
                       {site.location && (
-                        <div className="font-mono mt-0.5" style={{ fontSize: '0.62rem', color: 'var(--text-tertiary)' }}>
-                          {site.location}
-                        </div>
+                        <div className="font-mono mt-0.5" style={{ fontSize: '0.6rem', color: 'var(--text-tertiary)' }}>{site.location}</div>
                       )}
                     </div>
                     <div><StatusBadge status={site.status} /></div>
-                    <div className="font-mono" style={{ fontSize: '0.8rem', fontWeight: 600,
-                      color: site.status === 'down' ? '#ef4444' : site.status === 'degraded' ? '#f59e0b' : '#34d399' }}>
-                      {site.status === 'down' ? (
-                        <span style={{ fontSize: '0.72rem', color: '#ef4444', opacity: 0.7 }}>Unreachable</span>
-                      ) : site.pingMs ? `${site.pingMs} ms` : '—'}
+                    <div className="font-mono" style={{ fontSize: '0.8rem', fontWeight: 600, color: site.status === 'down' ? '#ef4444' : site.status === 'degraded' ? '#f59e0b' : '#34d399' }}>
+                      {site.status === 'down'
+                        ? <span style={{ fontSize: '0.7rem', opacity: 0.7 }}>Unreachable</span>
+                        : site.pingMs ? `${site.pingMs} ms` : '—'}
                     </div>
                     <div>
-                      <div className="font-mono mb-1" style={{ fontSize: '0.72rem', fontWeight: 600,
-                        color: site.uptime24h >= 99 ? '#34d399' : site.uptime24h >= 80 ? '#fbbf24' : '#f87171' }}>
+                      <div className="font-mono mb-1" style={{ fontSize: '0.72rem', fontWeight: 600, color: site.uptime24h >= 99 ? '#34d399' : site.uptime24h >= 80 ? '#fbbf24' : '#f87171' }}>
                         {site.status === 'down' ? '0.00%' : `${site.uptime24h.toFixed(2)}%`}
                       </div>
                       <UptimeBlocks uptime={site.status === 'down' ? 0 : site.uptime24h} status={site.status} />
@@ -495,19 +428,15 @@ export default function StatusPage() {
             </div>
           </div>
 
-          {/* Footer */}
-          <footer className="mt-10 pb-6 flex items-center justify-between flex-wrap gap-3"
-            style={{ borderTop: '1px solid var(--border-dim)', paddingTop: '1.5rem' }}>
-            <div className="font-mono" style={{ fontSize: '0.65rem', color: 'var(--text-tertiary)' }}>
+          <footer className="mt-10 pb-6 pt-6 flex items-center justify-between flex-wrap gap-3"
+            style={{ borderTop: '1px solid var(--border-dim)' }}>
+            <div className="font-mono" style={{ fontSize: '0.63rem', color: 'var(--text-tertiary)' }}>
               © {new Date().getFullYear()} Imarat Group of Companies — Network Operations Center
             </div>
-            <div className="flex items-center gap-4">
-              <a href="/admin/login"
-                className="font-mono transition-colors"
-                style={{ fontSize: '0.65rem', color: 'var(--text-tertiary)', textDecoration: 'none' }}>
-                Admin Portal →
-              </a>
-            </div>
+            <a href="/admin/login" className="font-mono"
+              style={{ fontSize: '0.63rem', color: 'var(--text-tertiary)', textDecoration: 'none' }}>
+              Admin Portal →
+            </a>
           </footer>
         </main>
       </div>
