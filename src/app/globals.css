@@ -1,0 +1,134 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-display: 'Syne', sans-serif;
+  --font-body: 'Instrument Sans', sans-serif;
+  --font-mono: 'DM Mono', monospace;
+
+  /* Brand */
+  --ig-dark: #0a0f1e;
+  --ig-dark2: #0d1526;
+  --ig-dark3: #111d33;
+  --ig-navy: #142040;
+  --ig-accent: #c9a84c;
+  --ig-accent2: #e8c87a;
+  --ig-green: #22c55e;
+  --ig-amber: #f59e0b;
+  --ig-red: #ef4444;
+  --ig-muted: #4a5568;
+  --ig-border: rgba(255,255,255,0.07);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--font-body);
+  background: var(--ig-dark);
+  color: #e2e8f0;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Loading screen */
+@keyframes igFadeIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes igPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+@keyframes igSpin { to { transform: rotate(360deg); } }
+@keyframes igSlideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes igGlow { 0%, 100% { box-shadow: 0 0 20px rgba(201,168,76,0.3); } 50% { box-shadow: 0 0 40px rgba(201,168,76,0.6); } }
+@keyframes igBarGrow { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@keyframes igScanline {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(500%); }
+}
+@keyframes igDotBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.2; }
+}
+@keyframes igShimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.animate-fadeIn { animation: igFadeIn 0.5s ease forwards; }
+.animate-slideUp { animation: igSlideUp 0.4s ease forwards; }
+.animate-pulse-slow { animation: igPulse 2s ease-in-out infinite; }
+.animate-spin-slow { animation: igSpin 1.2s linear infinite; }
+.animate-glow { animation: igGlow 2s ease-in-out infinite; }
+
+/* Sparkline */
+.sparkline-bar {
+  transform-origin: bottom;
+  animation: igBarGrow 0.3s ease forwards;
+}
+
+/* Scan line effect */
+.scan-line::after {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 60px;
+  background: linear-gradient(90deg, transparent, rgba(201,168,76,0.15), transparent);
+  animation: igScanline 3s linear infinite;
+  pointer-events: none;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: var(--ig-dark2); }
+::-webkit-scrollbar-thumb { background: rgba(201,168,76,0.3); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(201,168,76,0.5); }
+
+/* Status pill */
+.status-online {
+  background: rgba(34, 197, 94, 0.15);
+  color: #4ade80;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+.status-degraded {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+.status-down {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+/* Dot blink */
+.dot-blink { animation: igDotBlink 1.5s ease-in-out infinite; }
+
+/* Shimmer skeleton */
+.shimmer {
+  background: linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%);
+  background-size: 200% 100%;
+  animation: igShimmer 1.5s ease-in-out infinite;
+}
+
+/* Grid lines background */
+.grid-bg {
+  background-image:
+    linear-gradient(rgba(201,168,76,0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(201,168,76,0.04) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* Card hover */
+.site-row {
+  transition: background 0.15s ease;
+}
+.site-row:hover {
+  background: rgba(255,255,255,0.03);
+}
+
+/* Input reset */
+input, select, textarea {
+  font-family: var(--font-body);
+}
+
+/* Focus ring */
+.focus-ring:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(201,168,76,0.4);
+}
